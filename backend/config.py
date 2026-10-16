@@ -29,9 +29,23 @@ class Settings(BaseSettings):
     SESSION_TTL_MINUTES: int = 10
     DEFAULT_DEVICE_ID: str = "default_device"
 
+    # Timezone configuration
+    TIMEZONE: str = "Asia/Kolkata"
+
     # Speech configuration
     STT_MODEL_SIZE: str = "base"
     STT_DEVICE: str = "cpu"
+
+    # Visual Embeddings & Object Retrieval configuration
+    VISUAL_ENCODER_MODEL: str = "mobilenet_v3_small"
+    VISUAL_DEVICE: str = "auto"
+    SIMILARITY_STRONG_THRESHOLD: float = 0.72
+    SIMILARITY_WEAK_THRESHOLD: float = 0.45
+    AMBIGUITY_MARGIN: float = 0.06
+    MAX_IMAGE_UPLOAD_BYTES: int = 10 * 1024 * 1024  # 10 MB limit
+    REFERENCE_IMAGE_DIR: Path = BASE_DIR / "data" / "reference_images"
+    ENABLE_LOCAL_FEATURE_VERIFICATION: bool = True
+    LOCAL_FEATURE_MIN_MATCHES: int = 4
 
     model_config = SettingsConfigDict(
         env_prefix="SECOND_MIND_",
@@ -41,3 +55,4 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+

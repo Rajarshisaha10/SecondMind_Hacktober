@@ -49,6 +49,10 @@
         <svg class="nav-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
         Live Memory Log
       </button>
+      <button class="tab-btn" data-tab="objects-tab">
+        <svg class="nav-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
+        Object Registry & Vision
+      </button>
       <button class="tab-btn" data-tab="health-tab">
         <svg class="nav-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
         System Health
@@ -243,6 +247,130 @@
               <h4>Backend Uptime</h4>
               <p class="health-val" id="healthUptimeVal">0s</p>
             </div>
+          </div>
+        </div>
+      </section>
+
+      <!-- 5. Object Registry & Visual Search Tab -->
+      <section id="objects-tab" class="tab-content">
+        <div class="section-header-flex">
+          <div>
+            <h2>Important Object Registry & Visual Search</h2>
+            <p>Register reference images for personal items (glasses, keys, medication) to enable local visual instance retrieval.</p>
+          </div>
+          <button class="btn btn-secondary" id="refreshObjectsBtn">Refresh Registry</button>
+        </div>
+
+        <div class="card-grid">
+          <!-- Register New Object Card -->
+          <div class="card">
+            <h3 class="card-title">Register Important Object</h3>
+            <form id="registerObjectForm">
+              <div class="form-group">
+                <label for="objName">Object Name *</label>
+                <input type="text" id="objName" required placeholder="e.g. Reading Glasses, House Keys">
+              </div>
+              <div class="form-group">
+                <label for="objCategory">Category</label>
+                <select id="objCategory" class="form-input" style="width: 100%; padding: 10px; border: var(--border-subtle); border-radius: var(--radius-sm); font-weight: 600;">
+                  <option value="personal">Personal Item</option>
+                  <option value="glasses">Glasses</option>
+                  <option value="keys">Keys</option>
+                  <option value="medication">Medication</option>
+                  <option value="wallet">Wallet / Bag</option>
+                </select>
+              </div>
+              <div class="form-group">
+                <label for="objDescription">Description (Optional)</label>
+                <input type="text" id="objDescription" placeholder="e.g. Tortoiseshell frame, blue lanyard">
+              </div>
+              <div class="form-group">
+                <label for="objImageFile">Reference Image</label>
+                <input type="file" id="objImageFile" accept="image/jpeg,image/png,image/webp">
+                <p style="font-size: 11px; color: var(--text-muted); margin-top: 4px;">Upload photo of the object to compute visual embeddings.</p>
+              </div>
+              <div class="form-actions" style="margin-top: 16px;">
+                <button type="submit" class="btn btn-primary" id="saveObjBtn">Register Object</button>
+              </div>
+            </form>
+          </div>
+
+          <!-- Visual Search Test Card -->
+          <div class="card">
+            <h3 class="card-title">Test Visual Search / Verification</h3>
+            <form id="testVisualSearchForm">
+              <div class="form-group">
+                <label for="testFrameFile">Upload Camera Frame or Scene Photo</label>
+                <input type="file" id="testFrameFile" accept="image/jpeg,image/png,image/webp" required>
+              </div>
+              <div class="form-group">
+                <label for="testTargetObj">Target Object (Optional)</label>
+                <select id="testTargetObj" class="form-input" style="width: 100%; padding: 10px; border: var(--border-subtle); border-radius: var(--radius-sm); font-weight: 600;">
+                  <option value="">All Registered Objects</option>
+                </select>
+              </div>
+              <div class="form-actions" style="margin-top: 16px;">
+                <button type="submit" class="btn btn-secondary" id="runSearchBtn">Run Visual Search</button>
+              </div>
+            </form>
+            <div id="visualSearchResultBox" style="margin-top: 16px; display: none; padding: 12px; border: var(--border-subtle); border-radius: var(--radius-sm); background: var(--bg-card-alt);">
+              <!-- Search outcome rendered here -->
+            </div>
+          </div>
+        </div>
+
+        <!-- Registered Objects Table Card -->
+        <div class="card card-wide" style="margin-top: 24px;">
+          <h3 class="card-title">Registered Objects & Reference Embeddings</h3>
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Object</th>
+                  <th>Category</th>
+                  <th>Description</th>
+                  <th>References</th>
+                  <th>Registered At</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="objectsTableBody">
+                <tr>
+                  <td colspan="6" class="text-center">Loading registered objects...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Recent Visual Match Logs Card -->
+        <div class="card card-wide" style="margin-top: 24px;">
+          <div class="section-header-flex">
+            <div>
+              <h3 class="card-title">Recent Visual Search Matches</h3>
+              <p style="font-size: 13px; color: var(--text-muted);">Audited frame-level candidate detections with spatial bounding box and similarity score.</p>
+            </div>
+            <button class="btn btn-secondary btn-sm" id="refreshMatchesBtn">Refresh Matches</button>
+          </div>
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Timestamp</th>
+                  <th>Status</th>
+                  <th>Matched Object</th>
+                  <th>Location</th>
+                  <th>Similarity</th>
+                  <th>Bounding Box</th>
+                  <th>Local Matches</th>
+                </tr>
+              </thead>
+              <tbody id="matchesTableBody">
+                <tr>
+                  <td colspan="7" class="text-center">No visual matches recorded yet.</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
         </div>
       </section>

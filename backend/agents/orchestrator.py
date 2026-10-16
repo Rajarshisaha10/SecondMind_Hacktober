@@ -121,15 +121,31 @@ class OrchestratorAgent:
             logger.info("Orchestrator: Fast-triaged EMERGENCY intent for '%s'", transcript)
             return Intent.EMERGENCY
 
-        prompt = self.prompt_mgr.get_prompt("orchestrator.txt", transcript=transcript)
-        response = self.llm.generate(prompt=prompt, temperature=0.0).strip().upper()
+        try:
+            prompt = self.prompt_mgr.get_prompt("orchestrator.txt", transcript=transcript)
+            response = self.llm.generate(prompt=prompt, temperature=0.0).strip().upper()
+            for intent in Intent:
+                if intent.value in response:
+                    logger.info("Orchestrator: Classified intent '%s' for transcript '%s'", intent.value, transcript)
+                    return intent
+        except Exception as e:
+            logger.warning("Orchestrator: LLM intent classification failed (%s), using rule-based fallback", e)
 
-        for intent in Intent:
-            if intent.value in response:
-                logger.info("Orchestrator: Classified intent '%s' for transcript '%s'", intent.value, transcript)
-                return intent
+        # Rule-based fallback when LLM output is empty or unrecognized
+        if any(w in lower for w in ["where is", "where are", "where's", "where did i", "have you seen", "reading glasses", "glasses", "keys", "wallet", "find my"]):
+            logger.info("Orchestrator: Rule-based MEMORY intent for '%s'", transcript)
+            return Intent.MEMORY
+        if any(w in lower for w in ["medication", "pill", "pills", "medicine", "taken my"]):
+            logger.info("Orchestrator: Rule-based MEDICATION intent for '%s'", transcript)
+            return Intent.MEDICATION
+        if any(w in lower for w in ["appointment", "schedule", "calendar", "doctor"]):
+            logger.info("Orchestrator: Rule-based SCHEDULE intent for '%s'", transcript)
+            return Intent.SCHEDULE
+        if any(w in lower for w in ["who is", "who's", "daughter", "sarah"]):
+            logger.info("Orchestrator: Rule-based PROFILE intent for '%s'", transcript)
+            return Intent.PROFILE
 
-        logger.warning("Orchestrator: Unrecognized intent output '%s', falling back to GENERAL", response)
+        logger.warning("Orchestrator: Unrecognized intent output, falling back to GENERAL")
         return Intent.GENERAL
 
     def dispatch(

@@ -19,9 +19,12 @@ import sys
 import time
 import uuid
 from datetime import datetime
+from typing import Optional
 
 import cv2
 import requests
+
+from backend.time_utils import get_configured_timezone, to_iso_with_tz
 
 # ---------------------------------------------------------------------------
 # Tunable constants
@@ -31,6 +34,7 @@ DIFF_THRESHOLD = 10.0
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
 BACKEND_URL = "http://localhost:8000/observations"
+VISUAL_SEARCH_URL = "http://localhost:8000/api/visual-search"
 MODEL = "gemma3:4b"
 
 SYSTEM_PROMPT = (
@@ -118,6 +122,24 @@ def _post_observations(observations: list[dict]) -> None:
         log.exception("Failed to post observations to %s", BACKEND_URL)
 
 
+def _call_visual_search(base64_jpeg: str, frame_timestamp: Optional[str] = None) -> dict | None:
+    """Send frame to local visual reference-embedding retrieval service."""
+    payload = {
+        "image_base64": base64_jpeg,
+        "save_observation": True,
+    }
+    if frame_timestamp:
+        payload["frame_timestamp"] = frame_timestamp
+
+    try:
+        resp = requests.post(VISUAL_SEARCH_URL, json=payload, timeout=5)
+        if resp.status_code == 200:
+            return resp.json()
+    except Exception:
+        log.debug("Visual search call skipped or backend unavailable.")
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Main loop
 # ---------------------------------------------------------------------------
@@ -141,6 +163,10 @@ def run_perception_loop() -> None:
                 time.sleep(POLL_INTERVAL_SECONDS)
                 continue
 
+            # Record exact frame capture timestamp in configured timezone
+            capture_time = datetime.now(get_configured_timezone())
+            frame_ts = to_iso_with_tz(capture_time)
+
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
             # Frame-diff check — skip unchanged scenes
@@ -158,7 +184,19 @@ def run_perception_loop() -> None:
             # Encode frame as base64 JPEG in memory only
             b64_jpeg = _encode_frame_jpeg(frame)
 
-            # Call Ollama vision model
+            # 1. Local reference-image embedding search (fast, deterministic instance retrieval)
+            visual_res = _call_visual_search(b64_jpeg, frame_timestamp=frame_ts)
+            if visual_res and visual_res.get("is_confident") and visual_res.get("best_match"):
+                bm = visual_res["best_match"]
+                log.info(
+                    "Visual Embedding Match: '%s' detected at %s (similarity=%.3f, local_matches=%d)",
+                    bm["object_name"],
+                    bm.get("spatial_location", "room area"),
+                    bm["similarity_score"],
+                    bm.get("local_matches", 0),
+                )
+
+            # 2. Call Ollama vision model for general room description
             response_text = _call_ollama(b64_jpeg)
             if response_text is None:
                 time.sleep(POLL_INTERVAL_SECONDS)
@@ -184,15 +222,15 @@ def run_perception_loop() -> None:
                 time.sleep(POLL_INTERVAL_SECONDS)
                 continue
 
-            # Enrich each observation with metadata
-            now_iso = datetime.now().isoformat(sep="T", timespec="seconds")
+            # Enrich each observation with original frame capture timestamp
             enriched = []
             for obs in raw_observations:
                 if not isinstance(obs, dict):
                     log.warning("Skipping non-dict observation: %s", obs)
                     continue
                 obs["id"] = str(uuid.uuid4())
-                obs["timestamp"] = now_iso
+                obs["timestamp"] = frame_ts
+                obs["observed_at"] = frame_ts
                 obs["raw_description"] = response_text
                 enriched.append(obs)
 

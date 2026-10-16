@@ -6,11 +6,13 @@ Connects STT, OrchestratorAgent, target agents, TTS, and structured logging.
 import time
 from pathlib import Path
 from typing import Optional, Tuple
+from datetime import datetime
 from backend.config import settings
 from backend.constants import Confidence, Intent
 from backend.logger import log_request_lifecycle, logger
 from backend.schemas import AgentResponse, AskResponse
 from backend.stt import STTWrapper
+from backend.time_utils import get_configured_timezone, to_iso_with_tz
 from backend.tts import TTSWrapper
 from backend.agents.orchestrator import OrchestratorAgent
 
@@ -79,6 +81,9 @@ class AskService:
             confidence=agent_response.confidence,
             reasoning=agent_response.reasoning,
             audio_url=f"/audio/{Path(audio_file_path).name}",
+            observed_at=agent_response.observed_at,
+            formatted_time=agent_response.formatted_time,
+            response_generated_at=agent_response.response_generated_at or to_iso_with_tz(datetime.now(get_configured_timezone())),
         )
 
         return ask_response, audio_file_path
@@ -108,6 +113,7 @@ class AskService:
                 confidence=Confidence.LOW,
                 reasoning="Unrecognized or soft audio recording.",
                 audio_url=f"/audio/{Path(audio_file_path).name}",
+                response_generated_at=to_iso_with_tz(datetime.now(get_configured_timezone())),
             )
             return ask_response, audio_file_path
 
