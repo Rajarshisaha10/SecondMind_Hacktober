@@ -35,6 +35,7 @@ class MemoryAgent:
         llm: LLMService,
         prompt_mgr: PromptManager,
         clock_now: Optional[datetime] = None,
+        reality_checksum: Optional[Any] = None,
     ) -> None:
         """Initialize MemoryAgent with injected dependencies.
 
@@ -44,12 +45,22 @@ class MemoryAgent:
             llm: Centralized LLM service.
             prompt_mgr: Centralized prompt manager.
             clock_now: Optional fixed clock time for testing.
+            reality_checksum: Optional RealityChecksumService instance.
         """
         self.memory_store = memory_store
         self.profile_store = profile_store
         self.llm = llm
         self.prompt_mgr = prompt_mgr
         self.clock_now = clock_now
+        self.reality_checksum = reality_checksum
+
+    def get_reality_checksum(self):
+        """Get or lazily load RealityChecksumService."""
+        if self.reality_checksum is not None:
+            return self.reality_checksum
+        return getattr(self.memory_store, "reality_checksum", None) or (
+            self.memory_store.get_reality_checksum() if hasattr(self.memory_store, "get_reality_checksum") else None
+        )
 
     def answer_object_query(
         self,
@@ -166,6 +177,19 @@ class MemoryAgent:
             reasoning = f"Verified by visual reference embedding at {best_match['location']} (similarity {sim_val:.2f})."
         else:
             reasoning = f"Matched observation at {best_match['location']}."
+
+        # Reality Checksum: Verify discrepancies and recent relocations
+        chk_svc = self.get_reality_checksum()
+        state = chk_svc.get_object_state(object_query) if chk_svc and object_query else None
+        if state:
+            prev_l = state.get("previous_location")
+            if prev_l and prev_l.lower() != best_match.get("location", "").lower():
+                reasoning += f" Reality Checksum: Verified relocation from '{prev_l}' to '{best_match['location']}'."
+                if any(w in transcript.lower() for w in ["moved", "move", "relocat", "before", "previously"]):
+                    prior_pronoun = "They were" if plural else "It was"
+                    answer_text += f" ({prior_pronoun} previously on the {prev_l}.)"
+            if state.get("has_active_conflict"):
+                reasoning += " Reality Checksum: Sighting discrepancy flagged."
 
         logger.info("MemoryAgent (Object): answer='%s', confidence=%s", answer_text, confidence.value)
         return AgentResponse(

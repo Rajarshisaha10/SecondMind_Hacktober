@@ -24,14 +24,26 @@ from backend.time_utils import (
 class MemoryStore:
     """SQLite repository for room memory observations."""
 
-    def __init__(self, db_path: Optional[Path] = None) -> None:
+    def __init__(self, db_path: Optional[Path] = None, reality_checksum: Optional[Any] = None) -> None:
         """Initialize SQLite database connection and ensure schema exists.
 
         Args:
             db_path: Optional custom path to SQLite database file.
+            reality_checksum: Optional RealityChecksumService instance.
         """
         self.db_path = db_path or settings.DATABASE_PATH
+        self.reality_checksum = reality_checksum
         self._init_db()
+
+    def get_reality_checksum(self):
+        """Lazy loader for RealityChecksumService."""
+        if self.reality_checksum is None:
+            try:
+                from backend.services.reality_checksum_service import RealityChecksumService
+                self.reality_checksum = RealityChecksumService(db_path=self.db_path, memory_store=self)
+            except Exception:
+                pass
+        return self.reality_checksum
 
     @contextmanager
     def _get_connection(self):
@@ -79,6 +91,8 @@ class MemoryStore:
                 ("verification_status", "TEXT DEFAULT 'unverified'"),
                 ("observed_at", "TEXT"),
                 ("created_at", "TEXT"),
+                ("checksum_status", "TEXT DEFAULT 'active'"),
+                ("superseded_by", "TEXT"),
             ]
             for col_name, col_type in new_columns:
                 if col_name not in existing_cols:
@@ -190,7 +204,7 @@ class MemoryStore:
             obs_at,
         )
 
-        return {
+        ret = {
             "id": obs_id,
             "timestamp": ts,
             "observed_at": obs_at,
@@ -206,7 +220,19 @@ class MemoryStore:
             "similarity_score": similarity_score,
             "evidence_source": evidence_source,
             "verification_status": verification_status,
+            "checksum_status": "active",
+            "superseded_by": None,
         }
+
+        # Automatically run Reality Checksum conflict detection
+        checksum_svc = self.get_reality_checksum()
+        if checksum_svc:
+            try:
+                ret["reality_checksum"] = checksum_svc.process_observation(ret)
+            except Exception as e:
+                logger.warning("MemoryStore: RealityChecksum conflict check failed: %s", e)
+
+        return ret
 
     def add_visual_observation(
         self,
@@ -290,6 +316,8 @@ class MemoryStore:
         if not d.get("created_at"):
             d["created_at"] = d.get("timestamp")
         d["formatted_time"] = format_observation_timestamp(obs_at)
+        d["checksum_status"] = d.get("checksum_status") or "active"
+        d["is_outdated"] = d["checksum_status"] == "superseded"
         return d
 
     def query_medication_events(

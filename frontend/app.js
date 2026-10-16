@@ -29,6 +29,8 @@ document.addEventListener('DOMContentLoaded', () => {
   if (refObjBtn) refObjBtn.addEventListener('click', loadRegisteredObjects);
   const refMatchBtn = document.getElementById('refreshMatchesBtn');
   if (refMatchBtn) refMatchBtn.addEventListener('click', loadRecentMatches);
+  const refRealityBtn = document.getElementById('refreshRealityBtn');
+  if (refRealityBtn) refRealityBtn.addEventListener('click', loadRealityChecksum);
 });
 
 /* Tab Navigation */
@@ -47,6 +49,9 @@ function initTabs() {
       if (target === 'objects-tab') {
         loadRegisteredObjects();
         loadRecentMatches();
+      }
+      if (target === 'reality-tab') {
+        loadRealityChecksum();
       }
     });
   });
@@ -572,4 +577,118 @@ async function loadRecentMatches() {
     tbody.innerHTML = `<tr><td colspan="7" class="text-center">Failed to load recent visual matches.</td></tr>`;
   }
 }
+
+/* Reality Checksum & Discrepancy Verification Controllers */
+async function loadRealityChecksum() {
+  // 1. Fetch summary metrics
+  try {
+    const sumRes = await fetch('/api/reality-checksum/summary');
+    if (sumRes.ok) {
+      const summary = await sumRes.json();
+      const objEl = document.getElementById('realityTotalObjects');
+      const actEl = document.getElementById('realityActiveConflicts');
+      const relEl = document.getElementById('realityTotalRelocations');
+      if (objEl) objEl.innerText = summary.total_monitored_objects || 0;
+      if (actEl) actEl.innerText = summary.active_unverified_conflicts || 0;
+      if (relEl) relEl.innerText = summary.total_relocations_detected || 0;
+    }
+  } catch (e) {
+    console.error('Failed to load reality summary:', e);
+  }
+
+  // 2. Fetch verified reality states
+  const statesBody = document.getElementById('realityStatesTableBody');
+  if (statesBody) {
+    try {
+      const statesRes = await fetch('/api/reality-checksum/states');
+      const states = await statesRes.json();
+      if (!states || states.length === 0) {
+        statesBody.innerHTML = `<tr><td colspan="6" class="text-center">No object reality states tracked yet.</td></tr>`;
+      } else {
+        statesBody.innerHTML = states.map(s => {
+          const conflictBadge = s.has_active_conflict
+            ? `<span style="font-weight:700; font-size:11px; padding:2px 6px; border:1px solid #000; background:#FFB800; color:#000; border-radius:3px;">DISCREPANCY FLAGGED</span>`
+            : `<span style="font-weight:700; font-size:11px; padding:2px 6px; border:1px solid #000; background:#00B865; color:#fff; border-radius:3px;">VERIFIED</span>`;
+
+          return `
+            <tr>
+              <td><strong>${s.object_name}</strong></td>
+              <td><strong>${s.current_location}</strong></td>
+              <td>${s.previous_location || '—'}</td>
+              <td><code>${s.formatted_time || s.last_observed_at || '—'}</code></td>
+              <td><span style="font-size:12px; font-weight:600;">${s.verification_status} (${s.evidence_source})</span></td>
+              <td>${conflictBadge}</td>
+            </tr>
+          `;
+        }).join('');
+      }
+    } catch (e) {
+      statesBody.innerHTML = `<tr><td colspan="6" class="text-center">Failed to load verified reality states.</td></tr>`;
+    }
+  }
+
+  // 3. Fetch conflict history & open discrepancies
+  const conflictsBody = document.getElementById('realityConflictsTableBody');
+  if (conflictsBody) {
+    try {
+      const confRes = await fetch('/api/reality-checksum/conflicts');
+      const conflicts = await confRes.json();
+      if (!conflicts || conflicts.length === 0) {
+        conflictsBody.innerHTML = `<tr><td colspan="8" class="text-center">No discrepancies or conflicts detected.</td></tr>`;
+      } else {
+        conflictsBody.innerHTML = conflicts.map(c => {
+          let statusColor = '#00B865';
+          if (c.resolution_status === 'flagged_unverified') statusColor = '#FFB800';
+          if (c.resolution_status === 'rejected') statusColor = '#FF3333';
+
+          const actionBtn = c.resolution_status === 'flagged_unverified'
+            ? `<button class="btn btn-sm" onclick="resolveDiscrepancyModal('${c.id}', '${c.object_name}', '${c.new_location}')" style="background:#00B865; color:#fff;">Verify</button>`
+            : `<span style="font-size:11px; color:var(--text-muted);">✓ Resolved</span>`;
+
+          return `
+            <tr>
+              <td><code>${c.formatted_detected_at || c.detected_at}</code></td>
+              <td><strong>${c.object_name}</strong></td>
+              <td><code>${c.conflict_type}</code></td>
+              <td>${c.previous_location || '—'}</td>
+              <td><strong>${c.new_location}</strong></td>
+              <td><span style="font-weight:700; font-size:11px; padding:2px 6px; border:1px solid #000; background:${statusColor}; color:#fff; border-radius:3px;">${c.resolution_status}</span></td>
+              <td style="font-size:12px; max-width:250px;">${c.resolution_notes || ''}</td>
+              <td>${actionBtn}</td>
+            </tr>
+          `;
+        }).join('');
+      }
+    } catch (e) {
+      conflictsBody.innerHTML = `<tr><td colspan="8" class="text-center">Failed to load conflicts log.</td></tr>`;
+    }
+  }
+}
+
+async function resolveDiscrepancyModal(conflictId, objectName, candidateLoc) {
+  const verifiedLoc = prompt(`Verify true location for '${objectName}':`, candidateLoc);
+  if (!verifiedLoc || !verifiedLoc.trim()) return;
+
+  try {
+    const res = await fetch('/api/reality-checksum/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        conflict_id: conflictId,
+        verified_location: verifiedLoc.trim(),
+        verified_by: 'caregiver',
+      }),
+    });
+    if (res.ok) {
+      showToast(`Verified '${objectName}' at '${verifiedLoc.trim()}'!`);
+      loadRealityChecksum();
+    } else {
+      const err = await res.json();
+      showToast(err.detail || 'Failed to verify discrepancy', 'error');
+    }
+  } catch (e) {
+    showToast('Network error while verifying discrepancy', 'error');
+  }
+}
+
 

@@ -1,0 +1,37 @@
+# ===========================================================================
+# [CHANGES BACKUP - FEATURE 1: IMAGE EMBEDDINGS]
+# Target File: requirements.txt
+# ---------------------------------------------------------------------------
+# SUMMARY OF CHANGES:
+# Added deep learning and system monitoring dependencies:
+# - torch>=2.0.0         (PyTorch CPU/CUDA tensor ops & MobileNetV3 weights)
+# - torchvision>=0.15.0   (MobileNetV3-Small architecture & image transforms)
+# - psutil>=5.9.0         (System memory and CPU diagnostic profiling)
+# ===========================================================================
+
+# Second Mind — Dependencies
+# Core FastAPI Backend
+fastapi>=0.110.0
+uvicorn[standard]>=0.28.0
+pydantic>=2.6.0
+pydantic-settings>=2.2.0
+httpx>=0.27.0
+requests>=2.31.0
+
+# Speech & Vision Processing
+faster-whisper>=1.0.0
+pyttsx3>=2.90
+SpeechRecognition>=3.10.0
+opencv-python>=4.9.0
+sounddevice>=0.4.6
+numpy>=1.26.0
+
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+# [NEW - Feature 1: Deep Feature Extraction & Diagnostics]
+# +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+torch>=2.0.0
+torchvision>=0.15.0
+psutil>=5.9.0
+
+# Testing
+pytest>=8.0.0

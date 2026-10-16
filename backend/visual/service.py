@@ -344,7 +344,7 @@ class VisualRetrievalService:
             # Record into MemoryStore if requested
             if save_observation:
                 loc_desc = f"{best.spatial_location} (bounding box [{best.bounding_box.x}, {best.bounding_box.y}, {best.bounding_box.width}, {best.bounding_box.height}])"
-                self.memory_store.add_visual_observation(
+                obs_record = self.memory_store.add_visual_observation(
                     object_name=best.object_name,
                     location=loc_desc,
                     registered_object_id=best.registered_object_id,
@@ -355,6 +355,8 @@ class VisualRetrievalService:
                     observed_at=start_ts,
                     raw_description=f"Visual embedding match for '{best.object_name}' (similarity {best.similarity_score:.3f}) detected in {best.spatial_location}.",
                 )
+                if obs_record and obs_record.get("reality_checksum"):
+                    result.diagnostics["reality_checksum"] = obs_record["reality_checksum"]
 
         result.observed_at = result.observed_at or start_ts
         result.formatted_time = result.formatted_time or format_observation_timestamp(start_ts)
