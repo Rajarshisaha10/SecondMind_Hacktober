@@ -57,10 +57,12 @@ class MemoryAgent:
         # Prepare formatted observation context for Gemma phrasing
         obs_text_list = []
         for obs in observations:
-            obs_text_list.append(
-                f"- Object: {obs['object']}, Location: {obs['location']}, "
-                f"Action: {obs['action']}, Time: {obs['timestamp']}"
-            )
+            line = f"- Object: {obs['object']}, Location: {obs['location']}, Action: {obs['action']}, Time: {obs['timestamp']}"
+            if obs.get("evidence_source") == "visual_embedding":
+                sim = obs.get("similarity_score")
+                sim_str = f" (sim={sim:.2f})" if sim is not None else ""
+                line += f", Evidence: visual embedding match{sim_str}"
+            obs_text_list.append(line)
         obs_context = "\n".join(obs_text_list) if obs_text_list else "No observations found."
 
         prompt = self.prompt_mgr.get_prompt(
@@ -79,10 +81,14 @@ class MemoryAgent:
         if not answer_text:
             if confidence == Confidence.HIGH and best_match:
                 answer_text = f"Your {best_match['object']} was last seen on the {best_match['location']}."
-                reasoning = f"Matched single recent observation at {best_match['location']}."
+                if best_match.get("evidence_source") == "visual_embedding":
+                    sim = best_match.get("similarity_score", 0.0)
+                    reasoning = f"Verified by visual reference embedding at {best_match['location']} (similarity {sim:.2f})."
+                else:
+                    reasoning = f"Matched recent observation at {best_match['location']}."
             elif confidence == Confidence.MEDIUM and best_match:
                 answer_text = f"I think your {best_match['object']} might be on the {best_match['location']}."
-                reasoning = f"Matched older observation at {best_match['location']}."
+                reasoning = f"Matched observation at {best_match['location']}."
             else:
                 answer_text = "I'm sorry, I haven't seen that object in the room recently."
                 reasoning = "No matching observation found in memory store."
@@ -185,13 +191,22 @@ class MemoryAgent:
         if not ts_str:
             return Confidence.MEDIUM, best_match
 
+        # If the top observation was an uncertain or weak visual match, do not elevate confidence
+        if best_match.get("verification_status") == "weak_match":
+            return Confidence.LOW, best_match
+
         try:
             # Parse ISO timestamp
             ts = datetime.fromisoformat(ts_str)
             now = datetime.now(ts.tzinfo or timezone.utc)
             delta = now - ts
 
-            # Highly recent single match (< 2 hours) -> HIGH
+            # A strong visual embedding match within 4 hours provides high verified confidence
+            if best_match.get("evidence_source") == "visual_embedding" and best_match.get("verification_status") == "strong_match":
+                if delta < timedelta(hours=4):
+                    return Confidence.HIGH, best_match
+
+            # Highly recent single observation (< 2 hours) -> HIGH
             if delta < timedelta(hours=2) and len(observations) == 1:
                 return Confidence.HIGH, best_match
             else:

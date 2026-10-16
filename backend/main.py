@@ -39,6 +39,9 @@ from backend.agents.schedule_agent import ScheduleAgent
 from backend.services.ask_service import AskService
 from backend.services.health_service import HealthService
 from backend.services.reminder_service import ReminderService
+from backend.stores.object_store import ObjectStore
+from backend.visual.service import VisualRetrievalService
+from backend.schemas import ObjectRegisterRequest, VisualSearchRequest
 
 
 # ---------------------------------------------------------------------------
@@ -47,9 +50,13 @@ from backend.services.reminder_service import ReminderService
 memory_store = MemoryStore()
 memory_store.seed_demo_data()
 
+object_store = ObjectStore()
+visual_service = VisualRetrievalService(object_store=object_store, memory_store=memory_store)
+
 profile_store = ProfileStore()
 schedule_store = ScheduleStore()
 session_store = SessionStore()
+
 
 prompt_mgr = PromptManager()
 llm_service = LLMService()
@@ -197,6 +204,195 @@ def post_observations(observations: List[Dict[str, Any]]) -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Object Registry & Visual Search Routes
+# ---------------------------------------------------------------------------
+
+@app.get("/api/objects", tags=["Object Registry"])
+def get_objects() -> List[Dict[str, Any]]:
+    """List all registered objects and reference counts."""
+    return visual_service.object_store.list_objects()
+
+
+@app.post("/api/objects", tags=["Object Registry"])
+async def create_object(
+    request: Request,
+    name: Optional[str] = Form(None),
+    category: Optional[str] = Form("personal"),
+    description: Optional[str] = Form(""),
+    file: Optional[UploadFile] = File(None),
+) -> Dict[str, Any]:
+    """Register an important object with an optional reference image (supports JSON or multipart form)."""
+    content_type = request.headers.get("content-type", "")
+    img_bytes = None
+    orig_filename = None
+
+    if "application/json" in content_type:
+        try:
+            data = await request.json()
+            name_val = data.get("name")
+            cat_val = data.get("category", "personal")
+            desc_val = data.get("description", "")
+            b64_val = data.get("image_base64")
+            if not name_val:
+                raise HTTPException(status_code=400, detail="Object 'name' is required.")
+            if b64_val:
+                import base64
+                if "," in b64_val:
+                    b64_val = b64_val.split(",", 1)[1]
+                img_bytes = base64.b64decode(b64_val)
+                orig_filename = f"{name_val}.jpg"
+            return visual_service.register_object(
+                name=name_val,
+                category=cat_val,
+                description=desc_val,
+                image_bytes=img_bytes,
+                filename=orig_filename,
+            )
+        except Exception as e:
+            if isinstance(e, HTTPException):
+                raise e
+            raise HTTPException(status_code=400, detail=f"Failed to parse object registration: {e}")
+
+    # Multipart form
+    if not name or not name.strip():
+        raise HTTPException(status_code=400, detail="Object 'name' is required.")
+
+    if file is not None:
+        img_bytes = await file.read()
+        orig_filename = file.filename
+
+    try:
+        return visual_service.register_object(
+            name=name.strip(),
+            category=category or "personal",
+            description=description or "",
+            image_bytes=img_bytes,
+            filename=orig_filename,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@app.get("/api/objects/{object_id}", tags=["Object Registry"])
+def get_object(object_id: str) -> Dict[str, Any]:
+    """Get details of a registered object and its reference images."""
+    obj = visual_service.object_store.get_object(object_id)
+    if not obj:
+        raise HTTPException(status_code=404, detail="Object not found.")
+    return obj
+
+
+@app.delete("/api/objects/{object_id}", tags=["Object Registry"])
+def delete_object(object_id: str) -> Dict[str, Any]:
+    """Delete a registered object and all its associated reference images."""
+    deleted = visual_service.delete_object(object_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Object not found.")
+    return {"status": "deleted", "object_id": object_id}
+
+
+@app.post("/api/objects/{object_id}/references", tags=["Object Registry"])
+async def add_reference(object_id: str, file: UploadFile = File(...)) -> Dict[str, Any]:
+    """Upload and attach a new reference image to an existing registered object."""
+    img_bytes = await file.read()
+    try:
+        ref = visual_service.add_reference_to_object(
+            object_id=object_id, image_bytes=img_bytes, filename=file.filename
+        )
+        return ref
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.exception("Error adding reference image: %s", e)
+        raise HTTPException(status_code=500, detail="Internal error processing reference image.")
+
+
+@app.delete("/api/objects/{object_id}/references/{reference_id}", tags=["Object Registry"])
+def delete_reference(object_id: str, reference_id: str) -> Dict[str, Any]:
+    """Delete an individual reference image for an object."""
+    deleted = visual_service.delete_reference(reference_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Reference image not found.")
+    return {"status": "deleted", "reference_id": reference_id}
+
+
+@app.get("/api/objects/{object_id}/references/{reference_id}/image", tags=["Object Registry"])
+def get_reference_image(object_id: str, reference_id: str):
+    """Retrieve the stored reference image file."""
+    obj = visual_service.object_store.get_object(object_id)
+    if not obj:
+        raise HTTPException(status_code=404, detail="Object not found.")
+    ref = next((r for r in obj.get("references", []) if r["id"] == reference_id), None)
+    if not ref or not ref.get("image_path"):
+        raise HTTPException(status_code=404, detail="Reference image not found.")
+    p = Path(ref["image_path"])
+    if not p.exists():
+        raise HTTPException(status_code=404, detail="Image file not found on disk.")
+    return FileResponse(str(p))
+
+
+@app.post("/api/visual-search", tags=["Visual Retrieval"])
+async def post_visual_search(
+    request: Request,
+    file: Optional[UploadFile] = File(None),
+    target_object_id: Optional[str] = Form(None),
+    save_observation: bool = Form(True),
+) -> Dict[str, Any]:
+    """Search incoming camera frame or uploaded image against registered reference objects."""
+    content_type = request.headers.get("content-type", "")
+    img_bytes = None
+    target_id = target_object_id
+    save_obs = save_observation
+
+    if "application/json" in content_type:
+        try:
+            data = await request.json()
+            b64_val = data.get("image_base64")
+            target_id = data.get("target_object_id", target_id)
+            save_obs = data.get("save_observation", True)
+            if not b64_val:
+                raise HTTPException(status_code=400, detail="Missing image_base64 in JSON request.")
+            import base64
+            if "," in b64_val:
+                b64_val = b64_val.split(",", 1)[1]
+            img_bytes = base64.b64decode(b64_val)
+        except Exception as e:
+            if isinstance(e, HTTPException):
+                raise e
+            raise HTTPException(status_code=400, detail=f"Invalid JSON request: {e}")
+    elif file is not None:
+        img_bytes = await file.read()
+    else:
+        raise HTTPException(status_code=400, detail="Must provide image file or image_base64 payload.")
+
+    try:
+        bgr_frame = visual_service.validate_image_bytes(img_bytes)
+        result = visual_service.search_frame(
+            frame=bgr_frame,
+            target_object_id=target_id,
+            save_observation=save_obs,
+        )
+        return result.to_dict()
+    except ValueError as ve:
+        raise HTTPException(status_code=400, detail=str(ve))
+    except Exception as e:
+        logger.exception("Visual search error: %s", e)
+        raise HTTPException(status_code=500, detail=f"Visual search failed: {e}")
+
+
+@app.get("/api/visual-search/recent", tags=["Visual Retrieval"])
+def get_recent_visual_searches(limit: int = 50, object_id: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Retrieve recent visual match logs."""
+    return visual_service.object_store.get_recent_visual_matches(limit=limit, object_id=object_id)
+
+
+@app.get("/api/visual-search/diagnostics", tags=["Visual Retrieval"])
+def get_visual_diagnostics() -> Dict[str, Any]:
+    """Get active visual retrieval pipeline configuration and diagnostics."""
+    return visual_service.get_diagnostics()
+
+
+# ---------------------------------------------------------------------------
 # Core Track A Backend API Routes
 # ---------------------------------------------------------------------------
 
@@ -204,6 +400,7 @@ def post_observations(observations: List[Dict[str, Any]]) -> Dict[str, Any]:
 def get_health() -> HealthResponse:
     """Perform liveness and subsystem readiness check for demo verification."""
     return health_service.check_health()
+
 
 
 @app.post("/ask", tags=["Active Care Loop"])

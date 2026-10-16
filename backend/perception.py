@@ -31,6 +31,7 @@ DIFF_THRESHOLD = 10.0
 
 OLLAMA_URL = "http://localhost:11434/api/generate"
 BACKEND_URL = "http://localhost:8000/observations"
+VISUAL_SEARCH_URL = "http://localhost:8000/api/visual-search"
 MODEL = "gemma3:4b"
 
 SYSTEM_PROMPT = (
@@ -118,6 +119,21 @@ def _post_observations(observations: list[dict]) -> None:
         log.exception("Failed to post observations to %s", BACKEND_URL)
 
 
+def _call_visual_search(base64_jpeg: str) -> dict | None:
+    """Send frame to local visual reference-embedding retrieval service."""
+    payload = {
+        "image_base64": base64_jpeg,
+        "save_observation": True,
+    }
+    try:
+        resp = requests.post(VISUAL_SEARCH_URL, json=payload, timeout=5)
+        if resp.status_code == 200:
+            return resp.json()
+    except Exception:
+        log.debug("Visual search call skipped or backend unavailable.")
+    return None
+
+
 # ---------------------------------------------------------------------------
 # Main loop
 # ---------------------------------------------------------------------------
@@ -158,7 +174,19 @@ def run_perception_loop() -> None:
             # Encode frame as base64 JPEG in memory only
             b64_jpeg = _encode_frame_jpeg(frame)
 
-            # Call Ollama vision model
+            # 1. Local reference-image embedding search (fast, deterministic instance retrieval)
+            visual_res = _call_visual_search(b64_jpeg)
+            if visual_res and visual_res.get("is_confident") and visual_res.get("best_match"):
+                bm = visual_res["best_match"]
+                log.info(
+                    "Visual Embedding Match: '%s' detected at %s (similarity=%.3f, local_matches=%d)",
+                    bm["object_name"],
+                    bm.get("spatial_location", "room area"),
+                    bm["similarity_score"],
+                    bm.get("local_matches", 0),
+                )
+
+            # 2. Call Ollama vision model for general room description
             response_text = _call_ollama(b64_jpeg)
             if response_text is None:
                 time.sleep(POLL_INTERVAL_SECONDS)

@@ -6,6 +6,8 @@ document.addEventListener('DOMContentLoaded', () => {
   loadProfile();
   loadSchedule();
   loadMemoryLog();
+  loadRegisteredObjects();
+  loadRecentMatches();
 
   // Attach Event Listeners
   document.getElementById('profileForm').addEventListener('submit', handleProfileSubmit);
@@ -17,6 +19,16 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('addCustomBtn').addEventListener('click', () => addCustomRow());
   document.getElementById('refreshMemBtn').addEventListener('click', loadMemoryLog);
   document.getElementById('refreshHealthBtn').addEventListener('click', loadHealthStatus);
+
+  // Object Registry & Visual Search Listeners
+  const regForm = document.getElementById('registerObjectForm');
+  if (regForm) regForm.addEventListener('submit', handleObjectRegisterSubmit);
+  const searchForm = document.getElementById('testVisualSearchForm');
+  if (searchForm) searchForm.addEventListener('submit', handleVisualSearchSubmit);
+  const refObjBtn = document.getElementById('refreshObjectsBtn');
+  if (refObjBtn) refObjBtn.addEventListener('click', loadRegisteredObjects);
+  const refMatchBtn = document.getElementById('refreshMatchesBtn');
+  if (refMatchBtn) refMatchBtn.addEventListener('click', loadRecentMatches);
 });
 
 /* Tab Navigation */
@@ -32,6 +44,10 @@ function initTabs() {
 
       if (target === 'memory-tab') loadMemoryLog();
       if (target === 'health-tab') loadHealthStatus();
+      if (target === 'objects-tab') {
+        loadRegisteredObjects();
+        loadRecentMatches();
+      }
     });
   });
 }
@@ -326,3 +342,233 @@ async function loadMemoryLog() {
     tbody.innerHTML = `<tr><td colspan="6" class="text-center">Failed to load room memory observations.</td></tr>`;
   }
 }
+
+/* Object Registry & Visual Search Functions */
+async function loadRegisteredObjects() {
+  const tbody = document.getElementById('objectsTableBody');
+  const targetSelect = document.getElementById('testTargetObj');
+  if (!tbody) return;
+
+  try {
+    const res = await fetch('/api/objects');
+    const objects = await res.json();
+
+    if (targetSelect) {
+      targetSelect.innerHTML = '<option value="">All Registered Objects</option>' +
+        objects.map(o => `<option value="${o.id}">${o.name}</option>`).join('');
+    }
+
+    if (!objects || objects.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="6" class="text-center">No objects registered yet. Register an object above to begin.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = objects.map(obj => `
+      <tr>
+        <td><strong>${obj.name}</strong></td>
+        <td><span class="badge-event badge-object">${obj.category || 'personal'}</span></td>
+        <td>${obj.description || '—'}</td>
+        <td><span class="badge-event" style="background:#000;color:#fff;">${obj.reference_count || 0} ref(s)</span></td>
+        <td><code>${obj.created_at ? obj.created_at.split('T')[0] : ''}</code></td>
+        <td>
+          <button class="btn btn-secondary btn-sm" onclick="promptAddReference('${obj.id}', '${obj.name}')" style="margin-right: 6px;">+ Ref</button>
+          <button class="btn btn-sm" onclick="deleteObject('${obj.id}')" style="background:#FF3333;color:#fff;">Delete</button>
+        </td>
+      </tr>
+    `).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="6" class="text-center">Failed to load registered objects.</td></tr>`;
+  }
+}
+
+async function handleObjectRegisterSubmit(e) {
+  e.preventDefault();
+  const btn = document.getElementById('saveObjBtn');
+  btn.disabled = true;
+  btn.innerText = 'Registering...';
+
+  const name = document.getElementById('objName').value.trim();
+  const category = document.getElementById('objCategory').value;
+  const description = document.getElementById('objDescription').value.trim();
+  const fileInput = document.getElementById('objImageFile');
+
+  const formData = new FormData();
+  formData.append('name', name);
+  formData.append('category', category);
+  formData.append('description', description);
+  if (fileInput.files.length > 0) {
+    formData.append('file', fileInput.files[0]);
+  }
+
+  try {
+    const res = await fetch('/api/objects', {
+      method: 'POST',
+      body: formData,
+    });
+    if (res.ok) {
+      showToast(`Registered '${name}' successfully!`);
+      document.getElementById('registerObjectForm').reset();
+      loadRegisteredObjects();
+    } else {
+      const err = await res.json();
+      showToast(err.detail || 'Registration failed', 'error');
+    }
+  } catch (err) {
+    showToast('Network error during registration', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerText = 'Register Object';
+  }
+}
+
+async function deleteObject(objectId) {
+  if (!confirm('Are you sure you want to delete this registered object and its reference embeddings?')) return;
+  try {
+    const res = await fetch(`/api/objects/${objectId}`, { method: 'DELETE' });
+    if (res.ok) {
+      showToast('Object deleted.');
+      loadRegisteredObjects();
+    } else {
+      showToast('Failed to delete object', 'error');
+    }
+  } catch (e) {
+    showToast('Error deleting object', 'error');
+  }
+}
+
+async function promptAddReference(objectId, objectName) {
+  const input = document.createElement('input');
+  input.type = 'file';
+  input.accept = 'image/jpeg,image/png,image/webp';
+  input.onchange = async () => {
+    if (input.files.length === 0) return;
+    const formData = new FormData();
+    formData.append('file', input.files[0]);
+    showToast(`Uploading additional reference for ${objectName}...`);
+    try {
+      const res = await fetch(`/api/objects/${objectId}/references`, {
+        method: 'POST',
+        body: formData,
+      });
+      if (res.ok) {
+        showToast('Reference image added and embedded!');
+        loadRegisteredObjects();
+      } else {
+        const err = await res.json();
+        showToast(err.detail || 'Upload failed', 'error');
+      }
+    } catch (e) {
+      showToast('Error uploading reference', 'error');
+    }
+  };
+  input.click();
+}
+
+async function handleVisualSearchSubmit(e) {
+  e.preventDefault();
+  const btn = document.getElementById('runSearchBtn');
+  const resultBox = document.getElementById('visualSearchResultBox');
+  const fileInput = document.getElementById('testFrameFile');
+  const targetSelect = document.getElementById('testTargetObj');
+
+  if (fileInput.files.length === 0) {
+    showToast('Select an image file to search.', 'warning');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerText = 'Analyzing Frame...';
+
+  const formData = new FormData();
+  formData.append('file', fileInput.files[0]);
+  if (targetSelect.value) {
+    formData.append('target_object_id', targetSelect.value);
+  }
+  formData.append('save_observation', 'true');
+
+  try {
+    const res = await fetch('/api/visual-search', {
+      method: 'POST',
+      body: formData,
+    });
+    const data = await res.json();
+    resultBox.style.display = 'block';
+
+    let statusColor = '#FFB800';
+    if (data.status === 'strong_match') statusColor = '#00B865';
+    if (data.status === 'no_match' || data.status === 'failed') statusColor = '#FF3333';
+
+    if (data.best_match) {
+      const bm = data.best_match;
+      resultBox.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+          <span style="font-weight:800; text-transform:uppercase; padding:4px 8px; border:2px solid #000; background:${statusColor}; color:#fff; border-radius:4px;">
+            ${data.status.replace('_', ' ')}
+          </span>
+          <span style="font-weight:600; font-size:12px;">Latency: ${data.latency_ms}ms</span>
+        </div>
+        <p style="font-size:15px; margin-bottom:4px;"><strong>Target:</strong> ${bm.object_name}</p>
+        <p style="font-size:13px; margin-bottom:4px;"><strong>Approximate Location:</strong> ${bm.spatial_location}</p>
+        <p style="font-size:13px; margin-bottom:4px;"><strong>Cosine Similarity:</strong> ${(bm.similarity_score * 100).toFixed(1)}%</p>
+        <p style="font-size:12px; color:var(--text-muted);">Bounding Box: [x=${bm.bounding_box.x}, y=${bm.bounding_box.y}, w=${bm.bounding_box.width}, h=${bm.bounding_box.height}]</p>
+        ${bm.local_matches ? `<p style="font-size:12px; color:#00B865; font-weight:600;">✓ SIFT/ORB Local Keypoint Inliers: ${bm.local_matches}</p>` : ''}
+      `;
+    } else {
+      resultBox.innerHTML = `
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <span style="font-weight:800; text-transform:uppercase; padding:4px 8px; border:2px solid #000; background:${statusColor}; color:#fff; border-radius:4px;">
+            ${data.status.replace('_', ' ')}
+          </span>
+          <span style="font-size:12px;">Latency: ${data.latency_ms || 0}ms</span>
+        </div>
+        <p style="font-size:13px; margin-top:8px; color:var(--text-muted);">${data.diagnostics?.decision_reason || data.diagnostics?.reason || 'No confident match found.'}</p>
+      `;
+    }
+
+    loadRecentMatches();
+    loadMemoryLog();
+  } catch (err) {
+    showToast('Visual search request error', 'error');
+  } finally {
+    btn.disabled = false;
+    btn.innerText = 'Run Visual Search';
+  }
+}
+
+async function loadRecentMatches() {
+  const tbody = document.getElementById('matchesTableBody');
+  if (!tbody) return;
+
+  try {
+    const res = await fetch('/api/visual-search/recent');
+    const matches = await res.json();
+
+    if (!matches || matches.length === 0) {
+      tbody.innerHTML = `<tr><td colspan="7" class="text-center">No visual search matches recorded yet.</td></tr>`;
+      return;
+    }
+
+    tbody.innerHTML = matches.map(m => {
+      let statusColor = '#FFB800';
+      if (m.match_status === 'strong_match') statusColor = '#00B865';
+      if (m.match_status === 'no_match' || m.match_status === 'failed') statusColor = '#FF3333';
+
+      const bboxStr = m.bounding_box ? `[${m.bounding_box.x}, ${m.bounding_box.y}, ${m.bounding_box.width}x${m.bounding_box.height}]` : '—';
+
+      return `
+        <tr>
+          <td><code>${m.frame_timestamp ? m.frame_timestamp.split('T')[1]?.substring(0, 8) || m.frame_timestamp : ''}</code></td>
+          <td><span style="font-weight:700; font-size:11px; padding:2px 6px; border:1px solid #000; background:${statusColor}; color:#fff; border-radius:3px;">${m.match_status}</span></td>
+          <td><strong>${m.object_name}</strong></td>
+          <td>${m.location_name || '—'}</td>
+          <td><strong>${(m.similarity_score * 100).toFixed(1)}%</strong></td>
+          <td><code>${bboxStr}</code></td>
+          <td>${m.local_matches || 0}</td>
+        </tr>
+      `;
+    }).join('');
+  } catch (e) {
+    tbody.innerHTML = `<tr><td colspan="7" class="text-center">Failed to load recent visual matches.</td></tr>`;
+  }
+}
+

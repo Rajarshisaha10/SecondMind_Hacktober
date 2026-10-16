@@ -70,3 +70,21 @@ class HealthResponse(BaseModel):
     tts: str = Field(..., description="TTS engine status")
     agents: int = Field(..., description="Total number of active registered agents")
     uptime_seconds: float = Field(..., description="Application uptime in seconds")
+
+
+class ObjectRegisterRequest(BaseModel):
+    """JSON payload schema for registering an object."""
+
+    name: str = Field(..., min_length=1, description="Name of the physical object")
+    category: str = Field(default="personal", description="Category of the object")
+    description: str = Field(default="", description="Optional caregiver description")
+    image_base64: Optional[str] = Field(default=None, description="Optional base64 encoded reference image")
+
+
+class VisualSearchRequest(BaseModel):
+    """JSON payload schema for requesting visual search on an image frame."""
+
+    image_base64: Optional[str] = Field(default=None, description="Base64 encoded BGR/RGB image frame")
+    target_object_id: Optional[str] = Field(default=None, description="Optional filter to search specific object")
+    save_observation: bool = Field(default=True, description="Save confident detection into memory observations")
+

@@ -4,6 +4,7 @@ Provides an append-only observation log for object locations, medication-taken e
 and help requests passively logged by the perception agent or emergency system.
 """
 
+import json
 import uuid
 import sqlite3
 from datetime import datetime, timezone
@@ -42,7 +43,7 @@ class MemoryStore:
             conn.close()
 
     def _init_db(self) -> None:
-        """Create observations table if it does not exist."""
+        """Create observations table if it does not exist and apply safe migrations."""
         self.db_path.parent.mkdir(parents=True, exist_ok=True)
         with self._get_connection() as conn:
             conn.execute(
@@ -54,15 +55,39 @@ class MemoryStore:
                     location TEXT NOT NULL,
                     action TEXT NOT NULL,
                     event_type TEXT NOT NULL,
-                    raw_description TEXT
+                    raw_description TEXT,
+                    registered_object_id TEXT,
+                    bounding_box TEXT,
+                    similarity_score REAL,
+                    evidence_source TEXT DEFAULT 'perception',
+                    verification_status TEXT DEFAULT 'unverified'
                 )
                 """
             )
+            # Safe schema migration for pre-existing databases
+            existing_cols = {row["name"] for row in conn.execute("PRAGMA table_info(observations)").fetchall()}
+            new_columns = [
+                ("registered_object_id", "TEXT"),
+                ("bounding_box", "TEXT"),
+                ("similarity_score", "REAL"),
+                ("evidence_source", "TEXT DEFAULT 'perception'"),
+                ("verification_status", "TEXT DEFAULT 'unverified'"),
+            ]
+            for col_name, col_type in new_columns:
+                if col_name not in existing_cols:
+                    try:
+                        conn.execute(f"ALTER TABLE observations ADD COLUMN {col_name} {col_type}")
+                    except Exception:
+                        pass
+
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_obs_event_type ON observations(event_type)"
             )
             conn.execute(
                 "CREATE INDEX IF NOT EXISTS idx_obs_timestamp ON observations(timestamp)"
+            )
+            conn.execute(
+                "CREATE INDEX IF NOT EXISTS idx_obs_reg_obj ON observations(registered_object_id)"
             )
             conn.commit()
 
@@ -74,16 +99,26 @@ class MemoryStore:
         event_type: EventType | str = EventType.OBJECT_OBSERVATION,
         raw_description: str = "",
         timestamp: Optional[str] = None,
+        registered_object_id: Optional[str] = None,
+        bounding_box: Optional[Any] = None,
+        similarity_score: Optional[float] = None,
+        evidence_source: str = "perception",
+        verification_status: str = "unverified",
     ) -> Dict[str, Any]:
         """Add a new observation entry to the store.
 
         Args:
             object_name: Name of the observed object or entity.
             location: Room location (e.g. kitchen counter).
-            action: Action performed (e.g. placed, picked up).
+            action: Action performed (e.g. placed, picked up, visually observed).
             event_type: EventType enum or string classification.
             raw_description: Optional detailed textual description.
             timestamp: Optional ISO formatted timestamp string. Defaults to now.
+            registered_object_id: Optional ID of registered reference object.
+            bounding_box: Optional bounding box dict or JSON string.
+            similarity_score: Optional embedding similarity score.
+            evidence_source: Evidence modality ('perception', 'visual_embedding', 'manual').
+            verification_status: Verification state ('strong_match', 'provisional', 'unverified').
 
         Returns:
             Dict representing the added observation row.
@@ -93,22 +128,41 @@ class MemoryStore:
         evt_type_str = (
             event_type.value if isinstance(event_type, EventType) else str(event_type)
         )
+        bbox_str = json.dumps(bounding_box) if isinstance(bounding_box, dict) else (bounding_box or None)
 
         with self._get_connection() as conn:
             conn.execute(
                 """
-                INSERT INTO observations (id, timestamp, object, location, action, event_type, raw_description)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO observations (
+                    id, timestamp, object, location, action, event_type, raw_description,
+                    registered_object_id, bounding_box, similarity_score, evidence_source, verification_status
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (obs_id, ts, object_name, location, action, evt_type_str, raw_description),
+                (
+                    obs_id,
+                    ts,
+                    object_name,
+                    location,
+                    action,
+                    evt_type_str,
+                    raw_description,
+                    registered_object_id,
+                    bbox_str,
+                    similarity_score,
+                    evidence_source,
+                    verification_status,
+                ),
             )
             conn.commit()
 
         logger.info(
-            "MemoryStore: Added observation '%s' (%s) at '%s'",
+            "MemoryStore: Added observation '%s' (%s) at '%s' [source=%s, sim=%s]",
             object_name,
             evt_type_str,
             location,
+            evidence_source,
+            similarity_score,
         )
 
         return {
@@ -119,7 +173,43 @@ class MemoryStore:
             "action": action,
             "event_type": evt_type_str,
             "raw_description": raw_description,
+            "registered_object_id": registered_object_id,
+            "bounding_box": bounding_box,
+            "similarity_score": similarity_score,
+            "evidence_source": evidence_source,
+            "verification_status": verification_status,
         }
+
+    def add_visual_observation(
+        self,
+        object_name: str,
+        location: str,
+        registered_object_id: Optional[str] = None,
+        bounding_box: Optional[Dict[str, Any]] = None,
+        similarity_score: Optional[float] = None,
+        verification_status: str = "strong_match",
+        timestamp: Optional[str] = None,
+        raw_description: str = "",
+    ) -> Dict[str, Any]:
+        """Convenience method to record a successful visual search match into observations."""
+        desc = (
+            raw_description
+            or f"Visual embedding match for '{object_name}' (similarity={similarity_score:.3f}) at {location}."
+        )
+        return self.add_observation(
+            object_name=object_name,
+            location=location,
+            action="visually observed",
+            event_type=EventType.OBJECT_OBSERVATION,
+            raw_description=desc,
+            timestamp=timestamp,
+            registered_object_id=registered_object_id,
+            bounding_box=bounding_box,
+            similarity_score=similarity_score,
+            evidence_source="visual_embedding",
+            verification_status=verification_status,
+        )
+
 
     def query_objects(
         self, object_name: Optional[str] = None, limit: int = 10
@@ -153,7 +243,18 @@ class MemoryStore:
                     (EventType.OBJECT_OBSERVATION.value, limit),
                 )
             rows = cursor.fetchall()
-            return [dict(r) for r in rows]
+            return [self._format_row(r) for r in rows]
+
+    @staticmethod
+    def _format_row(row: sqlite3.Row) -> Dict[str, Any]:
+        """Convert SQLite row to dictionary and deserialize bounding_box JSON."""
+        d = dict(row)
+        if d.get("bounding_box") and isinstance(d["bounding_box"], str):
+            try:
+                d["bounding_box"] = json.loads(d["bounding_box"])
+            except Exception:
+                pass
+        return d
 
     def query_medication_events(
         self, since_iso: Optional[str] = None, limit: int = 10
@@ -187,7 +288,7 @@ class MemoryStore:
                     (EventType.MEDICATION_TAKEN.value, limit),
                 )
             rows = cursor.fetchall()
-            return [dict(r) for r in rows]
+            return [self._format_row(r) for r in rows]
 
     def query_all(self, limit: int = 50) -> List[Dict[str, Any]]:
         """Query all recent observations regardless of type.
@@ -202,7 +303,7 @@ class MemoryStore:
             cursor = conn.execute(
                 "SELECT * FROM observations ORDER BY timestamp DESC LIMIT ?", (limit,)
             )
-            return [dict(r) for r in cursor.fetchall()]
+            return [self._format_row(r) for r in cursor.fetchall()]
 
     def seed_demo_data(self) -> None:
         """Seed default observations if table is currently empty."""
