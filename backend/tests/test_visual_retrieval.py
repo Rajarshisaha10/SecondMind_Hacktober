@@ -41,6 +41,7 @@ def visual_service(temp_stores):
         memory_store=mem_store,
         encoder=encoder,
         matcher=matcher,
+        seed_defaults=False,
     )
     service.ref_dir = tmp_dir / "refs"
     service.ref_dir.mkdir(parents=True, exist_ok=True)

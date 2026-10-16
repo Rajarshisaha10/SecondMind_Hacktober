@@ -25,6 +25,7 @@ import cv2
 import requests
 
 from backend.time_utils import get_configured_timezone, to_iso_with_tz
+from backend.config import settings
 
 # ---------------------------------------------------------------------------
 # Tunable constants
@@ -32,10 +33,10 @@ from backend.time_utils import get_configured_timezone, to_iso_with_tz
 POLL_INTERVAL_SECONDS = 5
 DIFF_THRESHOLD = 10.0
 
-OLLAMA_URL = "http://localhost:11434/api/generate"
+OLLAMA_URL = f"{settings.OLLAMA_BASE_URL.rstrip('/')}/api/generate"
 BACKEND_URL = "http://localhost:8000/observations"
 VISUAL_SEARCH_URL = "http://localhost:8000/api/visual-search"
-MODEL = "gemma3:4b"
+MODEL = settings.OLLAMA_MODEL
 
 SYSTEM_PROMPT = (
     "You are watching a room to help someone with memory loss. "
@@ -184,21 +185,28 @@ def run_perception_loop() -> None:
             # Encode frame as base64 JPEG in memory only
             b64_jpeg = _encode_frame_jpeg(frame)
 
-            # 1. Local reference-image embedding search (fast, deterministic instance retrieval)
+            # 1. Primary OpenCV Object Registry search (fast, deterministic instance retrieval)
             visual_res = _call_visual_search(b64_jpeg, frame_timestamp=frame_ts)
+            has_visual_match = False
             if visual_res and visual_res.get("is_confident") and visual_res.get("best_match"):
+                has_visual_match = True
                 bm = visual_res["best_match"]
                 log.info(
-                    "Visual Embedding Match: '%s' detected at %s (similarity=%.3f, local_matches=%d)",
+                    "OpenCV Object Registry Match: '%s' detected at %s (similarity=%.3f, local_matches=%d)",
                     bm["object_name"],
                     bm.get("spatial_location", "room area"),
                     bm["similarity_score"],
                     bm.get("local_matches", 0),
                 )
 
-            # 2. Call Ollama vision model for general room description
-            response_text = _call_ollama(b64_jpeg)
+            # 2. Optional: Call Ollama multimodal model if vision-capable model is configured
+            is_vision_model = any(v in MODEL.lower() for v in ["gemma3", "vision", "llava", "bakllava", "moondream"])
+            response_text = None
+            if is_vision_model:
+                response_text = _call_ollama(b64_jpeg)
+
             if response_text is None:
+                # If running text-only LLM (like llama3.1), OpenCV Object Registry handles perception autonomously!
                 time.sleep(POLL_INTERVAL_SECONDS)
                 continue
 

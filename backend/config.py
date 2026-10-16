@@ -13,7 +13,7 @@ class Settings(BaseSettings):
     """Application settings with type validation and environment overrides."""
 
     # LLM configuration
-    OLLAMA_MODEL: str = "gemma3:4b"
+    OLLAMA_MODEL: str = "llama3.1:latest"
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_TIMEOUT_SECONDS: float = 30.0
 

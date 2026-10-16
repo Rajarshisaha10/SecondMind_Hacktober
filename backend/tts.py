@@ -63,6 +63,38 @@ class TTSWrapper:
         )
         return str(file_path)
 
+    def play_audio_file(self, file_path: str | Path, async_play: bool = False) -> bool:
+        """Play WAV audio file directly through laptop speakers using native Windows sound."""
+        path_str = str(file_path)
+        try:
+            import winsound
+            flags = winsound.SND_FILENAME
+            if async_play:
+                flags |= winsound.SND_ASYNC
+            winsound.PlaySound(path_str, flags)
+            logger.info("TTSWrapper: Played audio '%s' through laptop speakers", path_str)
+            return True
+        except Exception as e:
+            logger.warning("TTSWrapper: winsound playback failed (%s), attempting fallback...", e)
+            try:
+                import sounddevice as sd
+                import scipy.io.wavfile as wavfile
+                fs, data = wavfile.read(path_str)
+                sd.play(data, fs)
+                if not async_play:
+                    sd.wait()
+                return True
+            except Exception as e2:
+                logger.error("TTSWrapper: Speaker playback error: %s", e2)
+                return False
+
+    def speak(self, text: str, play_audio: bool = True) -> str:
+        """Synthesize text and play spoken audio out loud through laptop speakers."""
+        file_path = self.synthesize_to_file(text)
+        if play_audio:
+            self.play_audio_file(file_path)
+        return file_path
+
     def _synthesize_pyttsx3(self, text: str, file_path: Path) -> bool:
         """Synthesize speech using pyttsx3 in an isolated process to avoid COM deadlocks on Windows."""
         clean_text = text.strip()

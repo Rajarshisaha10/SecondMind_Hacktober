@@ -471,6 +471,8 @@ async def post_ask(
     transcript: Optional[str] = Form(None),
     x_device_id: Optional[str] = Header(None, alias="X-Device-ID"),
     x_emergency: Optional[str] = Header(None, alias="X-Emergency"),
+    x_speak_on_host: Optional[str] = Header(None, alias="X-Speak-On-Host"),
+    speak_on_host: bool = False,
     return_json: bool = False,
 ):
     """Process incoming user question (WAV audio file, JSON transcript text, or Form data).
@@ -551,12 +553,16 @@ async def post_ask(
     if ask_resp.response_generated_at:
         headers["X-Response-Generated-At"] = ask_resp.response_generated_at
 
-    if return_json:
-        return JSONResponse(content=ask_resp.model_dump(mode="json"), headers=headers)
-
     p = Path(audio_path)
     if not p.exists():
         p = Path(tts_wrapper.synthesize_to_file(ask_resp.answer_text))
+
+    should_speak = speak_on_host or (x_speak_on_host and x_speak_on_host.lower() in ["true", "1", "yes"])
+    if should_speak:
+        tts_wrapper.play_audio_file(p, async_play=True)
+
+    if return_json:
+        return JSONResponse(content=ask_resp.model_dump(mode="json"), headers=headers)
 
     headers["Content-Length"] = str(p.stat().st_size)
 
