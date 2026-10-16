@@ -1,0 +1,9 @@
+#pragma once
+
+// Second Mind M5StickC Plus2 Configuration
+// Copy this file to config.h and customize with your local network settings
+
+const char* WIFI_SSID     = "YOUR_WIFI_SSID";
+const char* WIFI_PASSWORD = "YOUR_WIFI_PASSWORD";
+const char* SERVER_IP     = "192.168.1.100";  // Laptop host IP address running backend
+const int   SERVER_PORT   = 8000;

@@ -1,0 +1,19 @@
+# Second Mind — Dependencies
+# Core FastAPI Backend
+fastapi>=0.110.0
+uvicorn[standard]>=0.28.0
+pydantic>=2.6.0
+pydantic-settings>=2.2.0
+httpx>=0.27.0
+requests>=2.31.0
+
+# Speech & Vision Processing
+faster-whisper>=1.0.0
+pyttsx3>=2.90
+SpeechRecognition>=3.10.0
+opencv-python>=4.9.0
+sounddevice>=0.4.6
+numpy>=1.26.0
+
+# Testing
+pytest>=8.0.0

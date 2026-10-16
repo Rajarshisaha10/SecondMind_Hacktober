@@ -1,0 +1,25 @@
+{
+  "patient": {
+    "name": "Jane Doe",
+    "age": 75,
+    "conditions": [
+      "Mild Cognitive Impairment"
+    ],
+    "medications": [
+      {
+        "name": "Morning Med",
+        "schedule_times": [
+          "08:00"
+        ],
+        "grace_window_minutes": 20
+      }
+    ]
+  },
+  "family": [
+    {
+      "name": "John Doe",
+      "relationship": "Son",
+      "phone": "555-0100"
+    }
+  ]
+}

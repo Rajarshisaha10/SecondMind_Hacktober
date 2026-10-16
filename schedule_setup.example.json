@@ -1,0 +1,29 @@
+{
+  "appointments": [
+    {
+      "id": "app-001",
+      "title": "Doctor Appointment",
+      "datetime": "2026-08-01T10:00:00",
+      "location": "Local Clinic",
+      "reminder_lead_minutes": [30, 10]
+    }
+  ],
+  "routines": [
+    {
+      "id": "rt-001",
+      "name": "Morning routine",
+      "days": ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"],
+      "start_time": "08:00",
+      "steps": ["Breakfast", "Medications"]
+    }
+  ],
+  "custom_reminders": [
+    {
+      "id": "rem-001",
+      "message": "Drink water",
+      "trigger_time": "14:00",
+      "days": ["monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday"],
+      "repeat": true
+    }
+  ]
+}

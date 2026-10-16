@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Environment & IDE
+.env
+.venv
+env/
+venv/
+.vscode/
+.idea/
+
+# Database & Audio Cache
+*.db
+*.sqlite3
+second_mind.db
+audio_cache/
+.pytest_cache/
+*.wav
+laptop_mic_test.wav
+
+# Sensitive Caregiver & Hardware Credentials
+profile_setup.json
+schedule_setup.json
+firmware/second_mind_stick/config.h

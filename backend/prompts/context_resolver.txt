@@ -1,0 +1,11 @@
+You are a session context resolver for an ambient memory assistant for someone with memory loss.
+Given the prior conversation context:
+- Last subject/entity: {last_subject}
+- Last resolved time reference: {last_resolved_time_ref}
+- Last intent: {last_intent}
+
+Question: "{transcript}"
+
+If the question contains pronouns (like "them", "it", "they", "her") or implicit follow-up references (like "did I move them after lunch?"), rewrite it into a fully explicit, standalone question using the prior subject and context.
+If it is already a standalone question, return it UNCHANGED.
+Return ONLY the final rewritten question string with no commentary or quotes.

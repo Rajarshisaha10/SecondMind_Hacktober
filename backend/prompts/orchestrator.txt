@@ -1,0 +1,11 @@
+Classify the following user question into EXACTLY ONE category:
+MEMORY (asking where an object is, or about a past observed room event that is NOT medication)
+MEDICATION (asking whether, when, or if medication was taken, or medication dose status)
+SCHEDULE (asking about appointments, daily routines, today's schedule, or upcoming events)
+PROFILE (asking about family members, personal facts, relationships, or medication schedule facts with no "did I take it" component)
+EMERGENCY (patient says "I need help", "call my daughter", "call for help", or similar distress phrase)
+GENERAL (everyday questions, time of day, date, small talk, or general everyday facts)
+
+Question: {transcript}
+
+Respond ONLY with the single intent category word (MEMORY, MEDICATION, SCHEDULE, PROFILE, EMERGENCY, or GENERAL).
