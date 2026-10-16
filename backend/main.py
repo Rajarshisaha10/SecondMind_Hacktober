@@ -41,13 +41,16 @@ from backend.services.health_service import HealthService
 from backend.services.reminder_service import ReminderService
 from backend.stores.object_store import ObjectStore
 from backend.visual.service import VisualRetrievalService
-from backend.schemas import ObjectRegisterRequest, VisualSearchRequest
+from backend.services.reality_checksum_service import RealityChecksumService
+from backend.schemas import ObjectRegisterRequest, VisualSearchRequest, RealityConflictVerifyRequest
 
 
 # ---------------------------------------------------------------------------
 # Global Component Initialization (Dependency Injection Container)
 # ---------------------------------------------------------------------------
 memory_store = MemoryStore()
+reality_checksum_service = RealityChecksumService(memory_store=memory_store)
+memory_store.reality_checksum = reality_checksum_service
 memory_store.seed_demo_data()
 
 object_store = ObjectStore()
@@ -64,7 +67,13 @@ llm_service = LLMService()
 stt_wrapper = STTWrapper()
 tts_wrapper = TTSWrapper()
 
-memory_agent = MemoryAgent(memory_store, profile_store, llm_service, prompt_mgr)
+memory_agent = MemoryAgent(
+    memory_store=memory_store,
+    profile_store=profile_store,
+    llm=llm_service,
+    prompt_mgr=prompt_mgr,
+    reality_checksum=reality_checksum_service,
+)
 schedule_agent = ScheduleAgent(schedule_store, llm_service, prompt_mgr)
 qa_agent = QAAgent(profile_store, llm_service, prompt_mgr)
 emergency_agent = EmergencyAgent(profile_store, memory_store, llm_service, prompt_mgr)
@@ -399,8 +408,53 @@ def get_visual_diagnostics() -> Dict[str, Any]:
 
 
 # ---------------------------------------------------------------------------
+# Reality Checksum & Memory Verification Routes
+# ---------------------------------------------------------------------------
+
+@app.get("/api/reality-checksum/conflicts", tags=["Reality Checksum"])
+def get_reality_conflicts(
+    limit: int = 50,
+    object_name: Optional[str] = None,
+    active_only: bool = False,
+) -> List[Dict[str, Any]]:
+    """Retrieve detected memory discrepancies, relocations, and conflicts."""
+    return reality_checksum_service.get_conflicts(
+        limit=limit, object_name=object_name, active_only=active_only
+    )
+
+
+@app.get("/api/reality-checksum/states", tags=["Reality Checksum"])
+def get_reality_states() -> List[Dict[str, Any]]:
+    """Retrieve verified current reality state for all monitored objects."""
+    return reality_checksum_service.get_all_states()
+
+
+@app.post("/api/reality-checksum/verify", tags=["Reality Checksum"])
+def verify_reality_discrepancy(payload: RealityConflictVerifyRequest) -> Dict[str, Any]:
+    """Manually verify or resolve a flagged discrepancy or relocation."""
+    try:
+        return reality_checksum_service.resolve_discrepancy(
+            conflict_id=payload.conflict_id,
+            verified_location=payload.verified_location,
+            verified_by=payload.verified_by,
+        )
+    except ValueError as ve:
+        raise HTTPException(status_code=404, detail=str(ve))
+    except Exception as e:
+        logger.exception("Failed to resolve reality conflict: %s", e)
+        raise HTTPException(status_code=500, detail="Internal error resolving conflict.")
+
+
+@app.get("/api/reality-checksum/summary", tags=["Reality Checksum"])
+def get_reality_summary() -> Dict[str, Any]:
+    """Get metrics summary for reality verification and memory discrepancies."""
+    return reality_checksum_service.get_summary()
+
+
+# ---------------------------------------------------------------------------
 # Core Track A Backend API Routes
 # ---------------------------------------------------------------------------
+
 
 @app.get("/health", response_model=HealthResponse, tags=["Health"])
 def get_health() -> HealthResponse:

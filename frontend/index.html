@@ -53,6 +53,10 @@
         <svg class="nav-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><rect x="3" y="3" width="18" height="18" rx="2"/><circle cx="8.5" cy="8.5" r="1.5"/><polyline points="21 15 16 10 5 21"/></svg>
         Object Registry & Vision
       </button>
+      <button class="tab-btn" data-tab="reality-tab">
+        <svg class="nav-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Reality Checksum
+      </button>
       <button class="tab-btn" data-tab="health-tab">
         <svg class="nav-svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
         System Health
@@ -368,6 +372,105 @@
               <tbody id="matchesTableBody">
                 <tr>
                   <td colspan="7" class="text-center">No visual matches recorded yet.</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <!-- 6. Reality Checksum Tab -->
+      <section id="reality-tab" class="tab-content">
+        <div class="section-header-flex">
+          <div>
+            <h2>Reality Checksum & Memory Verification</h2>
+            <p>Detect conflicts between new observations and stored memories, verify discrepancies, and update outdated locations.</p>
+          </div>
+          <button class="btn btn-secondary" id="refreshRealityBtn">Refresh Checksum</button>
+        </div>
+
+        <!-- Metrics Cards -->
+        <div class="card-grid">
+          <div class="card health-card">
+            <div class="health-icon-box" style="background:#00B865;">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+            </div>
+            <div class="health-info">
+              <h4>Monitored Objects</h4>
+              <p class="health-val" id="realityTotalObjects">0</p>
+            </div>
+          </div>
+
+          <div class="card health-card">
+            <div class="health-icon-box" style="background:#FFB800;">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            </div>
+            <div class="health-info">
+              <h4>Active Discrepancies</h4>
+              <p class="health-val" id="realityActiveConflicts">0</p>
+            </div>
+          </div>
+
+          <div class="card health-card">
+            <div class="health-icon-box" style="background:#6C5CE7;">
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" stroke-width="2.5"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+            </div>
+            <div class="health-info">
+              <h4>Relocations Verified</h4>
+              <p class="health-val" id="realityTotalRelocations">0</p>
+            </div>
+          </div>
+        </div>
+
+        <!-- Current Verified States Table -->
+        <div class="card card-wide" style="margin-top: 24px;">
+          <h3 class="card-title">Current Verified Object Locations</h3>
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Object</th>
+                  <th>Current Verified Location</th>
+                  <th>Previous Location</th>
+                  <th>Last Observed</th>
+                  <th>Verification Status</th>
+                  <th>Conflict State</th>
+                </tr>
+              </thead>
+              <tbody id="realityStatesTableBody">
+                <tr>
+                  <td colspan="6" class="text-center">Loading verified reality states...</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Discrepancy & Conflict History Table -->
+        <div class="card card-wide" style="margin-top: 24px;">
+          <div class="section-header-flex">
+            <div>
+              <h3 class="card-title">Discrepancy Audit Log & Relocation History</h3>
+              <p style="font-size: 13px; color: var(--text-muted);">Audited log of location changes, ambiguous discrepancies, and temporal checks.</p>
+            </div>
+          </div>
+          <div class="table-responsive">
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Detected At</th>
+                  <th>Object</th>
+                  <th>Conflict Type</th>
+                  <th>Previous Memory</th>
+                  <th>New Observation</th>
+                  <th>Resolution Status</th>
+                  <th>Resolution Notes</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="realityConflictsTableBody">
+                <tr>
+                  <td colspan="8" class="text-center">No discrepancies or conflicts detected.</td>
                 </tr>
               </tbody>
             </table>

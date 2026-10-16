@@ -97,3 +97,12 @@ class VisualSearchRequest(BaseModel):
     frame_timestamp: Optional[str] = Field(default=None, description="ISO timestamp of frame capture")
     observed_at: Optional[str] = Field(default=None, description="Alias for frame_timestamp")
 
+
+class RealityConflictVerifyRequest(BaseModel):
+    """Payload schema for verifying or resolving a reality discrepancy."""
+
+    conflict_id: str = Field(..., description="UUID of the conflict to resolve")
+    verified_location: str = Field(..., description="Confirmed true location of the object")
+    verified_by: str = Field(default="caregiver", description="Name or role of the verifier")
+
+
