@@ -29,8 +29,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 class Settings(BaseSettings):
     """Application settings with type validation and environment overrides."""
 
-    # LLM configuration (Original)
-    OLLAMA_MODEL: str = "gemma3:4b"
+    # LLM configuration (Updated for local LLaMA 3.1)
+    OLLAMA_MODEL: str = "llama3.1:latest"
     OLLAMA_BASE_URL: str = "http://localhost:11434"
     OLLAMA_TIMEOUT_SECONDS: float = 30.0
 

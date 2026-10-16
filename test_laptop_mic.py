@@ -58,6 +58,22 @@ def record_and_test_laptop_mic():
     print("DIAGNOSTIC TEST RESULT")
     print("========================================================")
     print(f"Transcribed text from Laptop Mic: '{transcript}'")
+
+    if transcript and len(transcript.strip()) > 1:
+        from backend.main import ask_service, tts_wrapper
+        from backend.config import settings
+        print(f"\nQuerying Second Mind (model: {settings.OLLAMA_MODEL})...")
+        ask_resp, audio_path = ask_service.process_ask_text(transcript, device_id="laptop_test")
+        print(f"Intent:      {ask_resp.intent.value.upper()}")
+        print(f"Confidence:  {ask_resp.confidence.value.upper()}")
+        if ask_resp.formatted_time:
+            print(f"Observed At: {ask_resp.formatted_time}")
+        print(f"Answer:      '{ask_resp.answer_text}'")
+        print("\n>>> Playing voice answer through LAPTOP SPEAKERS now... <<<")
+        tts_wrapper.play_audio_file(audio_path)
+        print(">>> Speaker playback completed! <<<")
+    else:
+        print("\n(No speech detected or mic audio was silent. Try speaking louder or closer to the microphone.)")
     print("========================================================\n")
 
 if __name__ == "__main__":

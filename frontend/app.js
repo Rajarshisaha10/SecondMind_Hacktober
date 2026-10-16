@@ -31,6 +31,9 @@ document.addEventListener('DOMContentLoaded', () => {
   if (refMatchBtn) refMatchBtn.addEventListener('click', loadRecentMatches);
   const refRealityBtn = document.getElementById('refreshRealityBtn');
   if (refRealityBtn) refRealityBtn.addEventListener('click', loadRealityChecksum);
+
+  // Initialize Voice Assistant
+  initVoiceAssistant();
 });
 
 /* Tab Navigation */
@@ -690,5 +693,194 @@ async function resolveDiscrepancyModal(conflictId, objectName, candidateLoc) {
     showToast('Network error while verifying discrepancy', 'error');
   }
 }
+
+/* ========================================================================= */
+/* Laptop Voice Assistant (Mic Input & Speaker Output)                      */
+/* ========================================================================= */
+let mediaRecorder = null;
+let audioChunks = [];
+let isRecording = false;
+
+function initVoiceAssistant() {
+  const startBtn = document.getElementById('startVoiceBtn');
+  const stopBtn = document.getElementById('stopVoiceBtn');
+  const pulseContainer = document.getElementById('micPulseContainer');
+  const sendTextBtn = document.getElementById('sendVoiceTextBtn');
+  const textInput = document.getElementById('voiceTextInput');
+
+  if (startBtn) startBtn.addEventListener('click', startRecordingVoice);
+  if (stopBtn) stopBtn.addEventListener('click', stopRecordingVoice);
+  if (pulseContainer) {
+    pulseContainer.addEventListener('click', () => {
+      if (!isRecording) startRecordingVoice();
+      else stopRecordingVoice();
+    });
+  }
+  if (sendTextBtn) {
+    sendTextBtn.addEventListener('click', () => {
+      const q = textInput.value.trim();
+      if (q) processVoiceQuery(q, false);
+    });
+  }
+  if (textInput) {
+    textInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        const q = textInput.value.trim();
+        if (q) processVoiceQuery(q, false);
+      }
+    });
+  }
+}
+
+async function startRecordingVoice() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    audioChunks = [];
+    mediaRecorder = new MediaRecorder(stream);
+    
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data.size > 0) audioChunks.push(e.data);
+    };
+
+    mediaRecorder.onstop = async () => {
+      const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+      stream.getTracks().forEach(track => track.stop());
+      processVoiceQuery(audioBlob, true);
+    };
+
+    mediaRecorder.start();
+    isRecording = true;
+    updateRecordingUI(true);
+    showToast('Recording... Speak clearly into your laptop mic.');
+  } catch (err) {
+    console.error('Mic access error:', err);
+    showToast('Could not access laptop microphone. Please allow microphone permissions in your browser.', 'error');
+  }
+}
+
+function stopRecordingVoice() {
+  if (mediaRecorder && isRecording) {
+    mediaRecorder.stop();
+    isRecording = false;
+    updateRecordingUI(false);
+  }
+}
+
+function updateRecordingUI(recording) {
+  const startBtn = document.getElementById('startVoiceBtn');
+  const stopBtn = document.getElementById('stopVoiceBtn');
+  const pulse = document.getElementById('micPulseContainer');
+  const title = document.getElementById('voiceStatusTitle');
+  const desc = document.getElementById('voiceStatusDesc');
+
+  if (recording) {
+    if (startBtn) startBtn.style.display = 'none';
+    if (stopBtn) stopBtn.style.display = 'inline-flex';
+    if (pulse) {
+      pulse.style.background = '#FEE2E2';
+      pulse.style.borderColor = '#EF4444';
+      pulse.style.transform = 'scale(1.1)';
+      pulse.style.boxShadow = '0 0 20px rgba(239, 68, 68, 0.4)';
+    }
+    if (title) title.innerText = 'Listening to Laptop Mic...';
+    if (desc) desc.innerText = 'Speak your question now (e.g. "Where are my keys?"). Click Stop when done.';
+  } else {
+    if (startBtn) startBtn.style.display = 'inline-flex';
+    if (stopBtn) stopBtn.style.display = 'none';
+    if (pulse) {
+      pulse.style.background = '#EFF6FF';
+      pulse.style.borderColor = '#2563EB';
+      pulse.style.transform = 'scale(1.0)';
+      pulse.style.boxShadow = 'none';
+    }
+    if (title) title.innerText = 'Click to Speak';
+    if (desc) desc.innerText = 'Tap the microphone to start recording your voice through the laptop mic.';
+  }
+}
+
+async function processVoiceQuery(inputData, isAudioBlob) {
+  const emptyBox = document.getElementById('voiceResponseEmpty');
+  const contentBox = document.getElementById('voiceResponseContent');
+  const alsoPlayHost = document.getElementById('voiceAlsoPlayHost')?.checked ?? true;
+
+  if (emptyBox) emptyBox.style.display = 'none';
+  if (contentBox) contentBox.style.display = 'flex';
+
+  document.getElementById('voiceRespTranscript').innerText = 'Processing audio via Whisper / STT...';
+  document.getElementById('voiceRespIntent').innerText = '...';
+  document.getElementById('voiceRespConfidence').innerText = '...';
+  document.getElementById('voiceRespReasoning').innerText = 'Second Mind (llama3.1:latest) is thinking...';
+  document.getElementById('voiceRespAnswer').innerText = 'Generating answer...';
+
+  try {
+    let res;
+    const headers = {};
+    if (alsoPlayHost) {
+      headers['X-Speak-On-Host'] = 'true';
+    }
+
+    if (isAudioBlob) {
+      const formData = new FormData();
+      formData.append('audio', inputData, 'laptop_mic.wav');
+      res = await fetch('/ask', {
+        method: 'POST',
+        headers: headers,
+        body: formData,
+      });
+    } else {
+      res = await fetch('/ask', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...headers,
+        },
+        body: JSON.stringify({ transcript: inputData, device_id: 'browser_laptop' }),
+      });
+    }
+
+    if (!res.ok) {
+      throw new Error(`Server returned HTTP ${res.status}`);
+    }
+
+    // Extract debug headers
+    const transcript = res.headers.get('X-Transcript') || (typeof inputData === 'string' ? inputData : 'Voice query');
+    const intent = res.headers.get('X-Intent') || 'GENERAL';
+    const confidence = res.headers.get('X-Confidence') || 'HIGH';
+    const reasoning = res.headers.get('X-Reasoning') || 'Direct query';
+    const answerText = res.headers.get('X-Answer-Text') || '';
+    const formattedTime = res.headers.get('X-Formatted-Time') || '';
+
+    document.getElementById('voiceRespTranscript').innerText = transcript;
+    document.getElementById('voiceRespIntent').innerText = intent.toUpperCase();
+    document.getElementById('voiceRespConfidence').innerText = confidence.toUpperCase();
+    document.getElementById('voiceRespReasoning').innerText = reasoning;
+    document.getElementById('voiceRespAnswer').innerText = answerText;
+
+    const timeContainer = document.getElementById('voiceRespTimeContainer');
+    const timeEl = document.getElementById('voiceRespTime');
+    if (formattedTime) {
+      timeContainer.style.display = 'block';
+      timeEl.innerText = formattedTime;
+    } else {
+      timeContainer.style.display = 'none';
+    }
+
+    // Audio playback on laptop speakers via browser
+    const audioBlob = await res.blob();
+    const audioUrl = URL.createObjectURL(audioBlob);
+    const player = document.getElementById('voiceAudioPlayer');
+    if (player) {
+      player.src = audioUrl;
+      player.play().catch(e => console.log('Autoplay blocked, user can click play:', e));
+    }
+
+    showToast(`Answered by llama3.1:latest (${intent})`);
+  } catch (err) {
+    console.error('Voice processing error:', err);
+    showToast('Failed to process voice query: ' + err.message, 'error');
+    document.getElementById('voiceRespAnswer').innerText = 'Error processing question. Please check backend status.';
+  }
+}
+
 
 

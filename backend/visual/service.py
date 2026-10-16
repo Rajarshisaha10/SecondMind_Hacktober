@@ -43,6 +43,7 @@ class VisualRetrievalService:
         matcher: Optional[SimilarityMatcher] = None,
         proposal_generator: Optional[CandidateRegionProposalGenerator] = None,
         local_matcher: Optional[LocalFeatureMatcher] = None,
+        seed_defaults: bool = True,
     ) -> None:
         self.object_store = object_store
         self.memory_store = memory_store
@@ -58,8 +59,76 @@ class VisualRetrievalService:
         self.ref_dir = Path(settings.REFERENCE_IMAGE_DIR)
         self.ref_dir.mkdir(parents=True, exist_ok=True)
 
-        # Warm up the cache
+        # Warm up the cache & seed default objects if empty
+        if seed_defaults:
+            self.seed_demo_objects()
         self.refresh_cache()
+
+    def seed_demo_objects(self) -> None:
+        """Seed default objects and reference images if object store is empty."""
+        with self._cache_lock:
+            existing = self.object_store.list_objects()
+            if len(existing) > 0:
+                return
+
+            demo_items = [
+                {
+                    "name": "Reading Glasses",
+                    "category": "glasses",
+                    "description": "Black and tortoiseshell frame reading glasses",
+                    "draw": lambda img: (
+                        cv2.circle(img, (75, 112), 35, (30, 30, 30), 4),
+                        cv2.circle(img, (149, 112), 35, (30, 30, 30), 4),
+                        cv2.line(img, (110, 112), (114, 112), (30, 30, 30), 4),
+                        cv2.line(img, (40, 112), (15, 100), (30, 30, 30), 3),
+                        cv2.line(img, (184, 112), (209, 100), (30, 30, 30), 3),
+                    ),
+                },
+                {
+                    "name": "Pill Organizer",
+                    "category": "medication",
+                    "description": "Blue weekly medication dispenser box",
+                    "draw": lambda img: (
+                        cv2.rectangle(img, (40, 60), (184, 164), (180, 100, 30), -1),
+                        cv2.rectangle(img, (40, 60), (184, 164), (50, 50, 50), 2),
+                        [cv2.line(img, (40 + i * 20, 60), (40 + i * 20, 164), (255, 255, 255), 1) for i in range(1, 7)],
+                    ),
+                },
+                {
+                    "name": "House Keys",
+                    "category": "keys",
+                    "description": "Brass keys on a ring with blue tag",
+                    "draw": lambda img: (
+                        cv2.circle(img, (90, 80), 25, (100, 100, 100), 4),
+                        cv2.line(img, (90, 105), (90, 180), (30, 150, 220), 8),
+                        cv2.line(img, (90, 140), (120, 140), (30, 150, 220), 4),
+                        cv2.line(img, (90, 160), (115, 160), (30, 150, 220), 4),
+                    ),
+                },
+                {
+                    "name": "Leather Wallet",
+                    "category": "personal",
+                    "description": "Dark brown leather folding wallet",
+                    "draw": lambda img: (
+                        cv2.rectangle(img, (50, 70), (174, 154), (40, 60, 110), -1),
+                        cv2.rectangle(img, (50, 70), (174, 154), (20, 30, 70), 3),
+                        cv2.line(img, (112, 70), (112, 154), (20, 30, 70), 2),
+                    ),
+                },
+            ]
+
+            for item in demo_items:
+                img = np.ones((224, 224, 3), dtype=np.uint8) * 240
+                item["draw"](img)
+                _, buf = cv2.imencode(".jpg", img)
+                self.register_object(
+                    name=item["name"],
+                    category=item["category"],
+                    description=item["description"],
+                    image_bytes=buf.tobytes(),
+                    filename=f"{item['name'].lower().replace(' ', '_')}.jpg",
+                )
+            logger.info("VisualRetrievalService: Seeded %d default objects in OpenCV Object Registry.", len(demo_items))
 
     def refresh_cache(self) -> None:
         """Reload all active reference embeddings from SQLite into memory for sub-millisecond retrieval."""

@@ -53,7 +53,8 @@ BACKEND_URL = "http://localhost:8000/observations"
 # Endpoint for local reference-embedding visual instance search.
 # +++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 VISUAL_SEARCH_URL = "http://localhost:8000/api/visual-search"
-MODEL = "gemma3:4b"
+from backend.config import settings
+MODEL = settings.OLLAMA_MODEL
 
 SYSTEM_PROMPT = (
     "You are watching a room to help someone with memory loss. "
