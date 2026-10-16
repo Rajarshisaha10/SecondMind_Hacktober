@@ -19,9 +19,12 @@ import sys
 import time
 import uuid
 from datetime import datetime
+from typing import Optional
 
 import cv2
 import requests
+
+from backend.time_utils import get_configured_timezone, to_iso_with_tz
 
 # ---------------------------------------------------------------------------
 # Tunable constants
@@ -119,12 +122,15 @@ def _post_observations(observations: list[dict]) -> None:
         log.exception("Failed to post observations to %s", BACKEND_URL)
 
 
-def _call_visual_search(base64_jpeg: str) -> dict | None:
+def _call_visual_search(base64_jpeg: str, frame_timestamp: Optional[str] = None) -> dict | None:
     """Send frame to local visual reference-embedding retrieval service."""
     payload = {
         "image_base64": base64_jpeg,
         "save_observation": True,
     }
+    if frame_timestamp:
+        payload["frame_timestamp"] = frame_timestamp
+
     try:
         resp = requests.post(VISUAL_SEARCH_URL, json=payload, timeout=5)
         if resp.status_code == 200:
@@ -157,6 +163,10 @@ def run_perception_loop() -> None:
                 time.sleep(POLL_INTERVAL_SECONDS)
                 continue
 
+            # Record exact frame capture timestamp in configured timezone
+            capture_time = datetime.now(get_configured_timezone())
+            frame_ts = to_iso_with_tz(capture_time)
+
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
             # Frame-diff check — skip unchanged scenes
@@ -175,7 +185,7 @@ def run_perception_loop() -> None:
             b64_jpeg = _encode_frame_jpeg(frame)
 
             # 1. Local reference-image embedding search (fast, deterministic instance retrieval)
-            visual_res = _call_visual_search(b64_jpeg)
+            visual_res = _call_visual_search(b64_jpeg, frame_timestamp=frame_ts)
             if visual_res and visual_res.get("is_confident") and visual_res.get("best_match"):
                 bm = visual_res["best_match"]
                 log.info(
@@ -212,15 +222,15 @@ def run_perception_loop() -> None:
                 time.sleep(POLL_INTERVAL_SECONDS)
                 continue
 
-            # Enrich each observation with metadata
-            now_iso = datetime.now().isoformat(sep="T", timespec="seconds")
+            # Enrich each observation with original frame capture timestamp
             enriched = []
             for obs in raw_observations:
                 if not isinstance(obs, dict):
                     log.warning("Skipping non-dict observation: %s", obs)
                     continue
                 obs["id"] = str(uuid.uuid4())
-                obs["timestamp"] = now_iso
+                obs["timestamp"] = frame_ts
+                obs["observed_at"] = frame_ts
                 obs["raw_description"] = response_text
                 enriched.append(obs)
 

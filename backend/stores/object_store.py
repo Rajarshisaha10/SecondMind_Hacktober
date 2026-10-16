@@ -16,6 +16,11 @@ import numpy as np
 
 from backend.config import settings
 from backend.logger import logger
+from backend.time_utils import (
+    format_observation_timestamp,
+    get_configured_timezone,
+    to_iso_with_tz,
+)
 
 
 class ObjectStore:
@@ -309,10 +314,13 @@ class ObjectStore:
         match_status: str,
         local_matches: int = 0,
         diagnostics: Optional[Dict[str, Any]] = None,
+        created_at: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Record a visual search match event for diagnostics and audit logging."""
         mid = str(uuid.uuid4())
-        now = datetime.now(timezone.utc).isoformat()
+        now = created_at or to_iso_with_tz(datetime.now(get_configured_timezone())) or datetime.now(timezone.utc).isoformat()
+        observed_at = to_iso_with_tz(frame_timestamp) or frame_timestamp
+        formatted_time = format_observation_timestamp(frame_timestamp)
         bbox_json = json.dumps(bounding_box)
         diag_json = json.dumps(diagnostics or {})
 
@@ -343,6 +351,8 @@ class ObjectStore:
         return {
             "id": mid,
             "frame_timestamp": frame_timestamp,
+            "observed_at": observed_at,
+            "formatted_time": formatted_time,
             "registered_object_id": registered_object_id,
             "object_name": object_name,
             "bounding_box": bounding_box,
@@ -383,5 +393,8 @@ class ObjectStore:
                     m_dict["diagnostics"] = json.loads(m_dict["diagnostics"])
                 except Exception:
                     pass
+                f_ts = m_dict.get("frame_timestamp")
+                m_dict["observed_at"] = to_iso_with_tz(f_ts) or f_ts
+                m_dict["formatted_time"] = format_observation_timestamp(f_ts)
                 matches.append(m_dict)
             return matches

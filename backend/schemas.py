@@ -16,6 +16,9 @@ class AgentResponse:
     answer_text: str
     confidence: Confidence
     reasoning: str
+    observed_at: Optional[str] = None
+    formatted_time: Optional[str] = None
+    response_generated_at: Optional[str] = None
 
 
 class ObservationCreate(BaseModel):
@@ -31,6 +34,7 @@ class ObservationCreate(BaseModel):
     raw_description: Optional[str] = Field(
         default="", description="Full raw description from vision agent"
     )
+    observed_at: Optional[str] = Field(default=None, description="ISO timestamp of observation capture")
 
 
 class AskResponse(BaseModel):
@@ -42,6 +46,9 @@ class AskResponse(BaseModel):
     confidence: Confidence = Field(..., description="Computed confidence level")
     reasoning: str = Field(..., description="One-line natural language reasoning trace")
     audio_url: Optional[str] = Field(default=None, description="URL or path to synthesized audio file")
+    observed_at: Optional[str] = Field(default=None, description="ISO 8601 observation timestamp with explicit timezone")
+    formatted_time: Optional[str] = Field(default=None, description="Human-readable formatted observation timestamp")
+    response_generated_at: Optional[str] = Field(default=None, description="ISO 8601 timestamp when response was generated")
 
 
 class ReminderCheckResponse(BaseModel):
@@ -87,4 +94,6 @@ class VisualSearchRequest(BaseModel):
     image_base64: Optional[str] = Field(default=None, description="Base64 encoded BGR/RGB image frame")
     target_object_id: Optional[str] = Field(default=None, description="Optional filter to search specific object")
     save_observation: bool = Field(default=True, description="Save confident detection into memory observations")
+    frame_timestamp: Optional[str] = Field(default=None, description="ISO timestamp of frame capture")
+    observed_at: Optional[str] = Field(default=None, description="Alias for frame_timestamp")
 

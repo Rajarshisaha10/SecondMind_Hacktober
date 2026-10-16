@@ -18,6 +18,11 @@ from backend.config import settings
 from backend.logger import logger
 from backend.stores.memory_store import MemoryStore
 from backend.stores.object_store import ObjectStore
+from backend.time_utils import (
+    format_observation_timestamp,
+    get_configured_timezone,
+    to_iso_with_tz,
+)
 from backend.visual.encoder import (
     LocalFeatureMatcher,
     VisualEncoder,
@@ -246,12 +251,19 @@ class VisualRetrievalService:
         Returns:
             VisualSearchResult containing best match, candidate rankings, and diagnostic metrics.
         """
-        start_ts = frame_timestamp or datetime.now(timezone.utc).isoformat()
+        start_ts = (
+            to_iso_with_tz(frame_timestamp)
+            or frame_timestamp
+            or to_iso_with_tz(datetime.now(get_configured_timezone()))
+            or datetime.now(timezone.utc).isoformat()
+        )
         if frame is None or frame.size == 0:
             return VisualSearchResult(
                 status=MatchStatus.FAILED,
                 is_confident=False,
                 frame_timestamp=start_ts,
+                observed_at=start_ts,
+                formatted_time=format_observation_timestamp(start_ts),
                 diagnostics={"error": "Empty or invalid camera frame."},
             )
 
@@ -340,9 +352,12 @@ class VisualRetrievalService:
                     similarity_score=best.similarity_score,
                     verification_status=result.status.value,
                     timestamp=start_ts,
+                    observed_at=start_ts,
                     raw_description=f"Visual embedding match for '{best.object_name}' (similarity {best.similarity_score:.3f}) detected in {best.spatial_location}.",
                 )
 
+        result.observed_at = result.observed_at or start_ts
+        result.formatted_time = result.formatted_time or format_observation_timestamp(start_ts)
         return result
 
     def get_diagnostics(self) -> Dict[str, Any]:

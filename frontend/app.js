@@ -329,7 +329,7 @@ async function loadMemoryLog() {
 
       return `
         <tr>
-          <td><code>${obs.timestamp || ''}</code></td>
+          <td><code title="${obs.observed_at || obs.timestamp || ''}">${obs.formatted_time || obs.timestamp || 'Time unavailable'}</code></td>
           <td><span class="badge-event ${badgeClass}">${obs.event_type}</span></td>
           <td><strong>${obs.object || ''}</strong></td>
           <td>${obs.location || ''}</td>
@@ -509,6 +509,7 @@ async function handleVisualSearchSubmit(e) {
         </div>
         <p style="font-size:15px; margin-bottom:4px;"><strong>Target:</strong> ${bm.object_name}</p>
         <p style="font-size:13px; margin-bottom:4px;"><strong>Approximate Location:</strong> ${bm.spatial_location}</p>
+        <p style="font-size:13px; margin-bottom:4px;"><strong>Observed Time:</strong> ${data.formatted_time || data.frame_timestamp || 'Time unavailable'}</p>
         <p style="font-size:13px; margin-bottom:4px;"><strong>Cosine Similarity:</strong> ${(bm.similarity_score * 100).toFixed(1)}%</p>
         <p style="font-size:12px; color:var(--text-muted);">Bounding Box: [x=${bm.bounding_box.x}, y=${bm.bounding_box.y}, w=${bm.bounding_box.width}, h=${bm.bounding_box.height}]</p>
         ${bm.local_matches ? `<p style="font-size:12px; color:#00B865; font-weight:600;">✓ SIFT/ORB Local Keypoint Inliers: ${bm.local_matches}</p>` : ''}
@@ -557,7 +558,7 @@ async function loadRecentMatches() {
 
       return `
         <tr>
-          <td><code>${m.frame_timestamp ? m.frame_timestamp.split('T')[1]?.substring(0, 8) || m.frame_timestamp : ''}</code></td>
+          <td><code title="${m.observed_at || m.frame_timestamp || ''}">${m.formatted_time || (m.frame_timestamp ? m.frame_timestamp.split('T')[1]?.substring(0, 8) || m.frame_timestamp : '')}</code></td>
           <td><span style="font-weight:700; font-size:11px; padding:2px 6px; border:1px solid #000; background:${statusColor}; color:#fff; border-radius:3px;">${m.match_status}</span></td>
           <td><strong>${m.object_name}</strong></td>
           <td>${m.location_name || '—'}</td>

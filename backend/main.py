@@ -186,7 +186,8 @@ def post_observations(observations: List[Dict[str, Any]]) -> Dict[str, Any]:
         act = obs.get("action", "")
         evt_type = obs.get("event_type", EventType.OBJECT_OBSERVATION)
         raw_desc = obs.get("raw_description", "")
-        ts = obs.get("timestamp")
+        ts = obs.get("observed_at") or obs.get("timestamp")
+        obs_at = obs.get("observed_at") or ts
 
         if obj_name and loc:
             memory_store.add_observation(
@@ -196,6 +197,7 @@ def post_observations(observations: List[Dict[str, Any]]) -> Dict[str, Any]:
                 event_type=evt_type,
                 raw_description=raw_desc,
                 timestamp=ts,
+                observed_at=obs_at,
             )
             added_count += 1
 
@@ -337,12 +339,14 @@ async def post_visual_search(
     file: Optional[UploadFile] = File(None),
     target_object_id: Optional[str] = Form(None),
     save_observation: bool = Form(True),
+    frame_timestamp: Optional[str] = Form(None),
 ) -> Dict[str, Any]:
     """Search incoming camera frame or uploaded image against registered reference objects."""
     content_type = request.headers.get("content-type", "")
     img_bytes = None
     target_id = target_object_id
     save_obs = save_observation
+    frame_ts = frame_timestamp
 
     if "application/json" in content_type:
         try:
@@ -350,6 +354,7 @@ async def post_visual_search(
             b64_val = data.get("image_base64")
             target_id = data.get("target_object_id", target_id)
             save_obs = data.get("save_observation", True)
+            frame_ts = data.get("frame_timestamp") or data.get("observed_at") or frame_ts
             if not b64_val:
                 raise HTTPException(status_code=400, detail="Missing image_base64 in JSON request.")
             import base64
@@ -371,6 +376,7 @@ async def post_visual_search(
             frame=bgr_frame,
             target_object_id=target_id,
             save_observation=save_obs,
+            frame_timestamp=frame_ts,
         )
         return result.to_dict()
     except ValueError as ve:
@@ -484,6 +490,12 @@ async def post_ask(
         "X-Reasoning": ask_resp.reasoning,
         "X-Answer-Text": ask_resp.answer_text,
     }
+    if ask_resp.observed_at:
+        headers["X-Observed-At"] = ask_resp.observed_at
+    if ask_resp.formatted_time:
+        headers["X-Formatted-Time"] = _sanitize_header(ask_resp.formatted_time)
+    if ask_resp.response_generated_at:
+        headers["X-Response-Generated-At"] = ask_resp.response_generated_at
 
     if return_json:
         return JSONResponse(content=ask_resp.model_dump(mode="json"), headers=headers)

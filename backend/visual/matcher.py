@@ -14,6 +14,7 @@ import numpy as np
 
 from backend.config import settings
 from backend.logger import logger
+from backend.time_utils import format_observation_timestamp, to_iso_with_tz
 from backend.visual.encoder import LocalFeatureMatcher, LocalVerificationResult
 from backend.visual.proposals import BoundingBox
 
@@ -68,9 +69,13 @@ class VisualSearchResult:
     is_confident: bool = False
     latency_ms: float = 0.0
     frame_timestamp: str = ""
+    observed_at: str = ""
+    formatted_time: str = ""
     diagnostics: Dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> Dict[str, Any]:
+        obs_at = self.observed_at or to_iso_with_tz(self.frame_timestamp) or self.frame_timestamp
+        fmt_time = self.formatted_time or format_observation_timestamp(self.frame_timestamp)
         return {
             "status": self.status.value,
             "is_confident": self.is_confident,
@@ -78,6 +83,8 @@ class VisualSearchResult:
             "margin_to_second": round(float(self.margin_to_second), 4),
             "latency_ms": round(float(self.latency_ms), 2),
             "frame_timestamp": self.frame_timestamp,
+            "observed_at": obs_at,
+            "formatted_time": fmt_time,
             "best_match": self.best_match.to_dict() if self.best_match else None,
             "candidate_matches": [c.to_dict() for c in self.candidate_matches[:5]],
             "diagnostics": self.diagnostics,
@@ -256,6 +263,8 @@ class SimilarityMatcher:
             is_confident=is_confident,
             latency_ms=latency,
             frame_timestamp=frame_timestamp,
+            observed_at=to_iso_with_tz(frame_timestamp) or frame_timestamp,
+            formatted_time=format_observation_timestamp(frame_timestamp),
             diagnostics={
                 "decision_reason": reason,
                 "num_candidate_regions_evaluated": num_candidates,

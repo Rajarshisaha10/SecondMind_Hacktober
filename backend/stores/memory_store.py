@@ -14,6 +14,11 @@ from typing import Any, Dict, List, Optional
 from backend.config import settings
 from backend.constants import EventType
 from backend.logger import logger
+from backend.time_utils import (
+    format_observation_timestamp,
+    get_configured_timezone,
+    to_iso_with_tz,
+)
 
 
 class MemoryStore:
@@ -72,6 +77,8 @@ class MemoryStore:
                 ("similarity_score", "REAL"),
                 ("evidence_source", "TEXT DEFAULT 'perception'"),
                 ("verification_status", "TEXT DEFAULT 'unverified'"),
+                ("observed_at", "TEXT"),
+                ("created_at", "TEXT"),
             ]
             for col_name, col_type in new_columns:
                 if col_name not in existing_cols:
@@ -104,6 +111,8 @@ class MemoryStore:
         similarity_score: Optional[float] = None,
         evidence_source: str = "perception",
         verification_status: str = "unverified",
+        observed_at: Optional[str] = None,
+        created_at: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Add a new observation entry to the store.
 
@@ -119,12 +128,24 @@ class MemoryStore:
             similarity_score: Optional embedding similarity score.
             evidence_source: Evidence modality ('perception', 'visual_embedding', 'manual').
             verification_status: Verification state ('strong_match', 'provisional', 'unverified').
+            observed_at: Specific timestamp when object was visually observed.
+            created_at: Specific timestamp when DB record was written.
 
         Returns:
             Dict representing the added observation row.
         """
         obs_id = str(uuid.uuid4())
-        ts = timestamp or datetime.now(timezone.utc).isoformat()
+        now_iso = to_iso_with_tz(datetime.now(get_configured_timezone())) or datetime.now(timezone.utc).isoformat()
+        if observed_at is not None:
+            obs_at = observed_at
+        elif timestamp is not None:
+            obs_at = timestamp
+        else:
+            obs_at = now_iso
+        created_at_val = created_at or now_iso
+        ts = obs_at
+        formatted_time = format_observation_timestamp(obs_at)
+
         evt_type_str = (
             event_type.value if isinstance(event_type, EventType) else str(event_type)
         )
@@ -135,9 +156,10 @@ class MemoryStore:
                 """
                 INSERT INTO observations (
                     id, timestamp, object, location, action, event_type, raw_description,
-                    registered_object_id, bounding_box, similarity_score, evidence_source, verification_status
+                    registered_object_id, bounding_box, similarity_score, evidence_source, verification_status,
+                    observed_at, created_at
                 )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     obs_id,
@@ -152,22 +174,28 @@ class MemoryStore:
                     similarity_score,
                     evidence_source,
                     verification_status,
+                    obs_at,
+                    created_at_val,
                 ),
             )
             conn.commit()
 
         logger.info(
-            "MemoryStore: Added observation '%s' (%s) at '%s' [source=%s, sim=%s]",
+            "MemoryStore: Added observation '%s' (%s) at '%s' [source=%s, sim=%s, observed_at=%s]",
             object_name,
             evt_type_str,
             location,
             evidence_source,
             similarity_score,
+            obs_at,
         )
 
         return {
             "id": obs_id,
             "timestamp": ts,
+            "observed_at": obs_at,
+            "created_at": created_at_val,
+            "formatted_time": formatted_time,
             "object": object_name,
             "location": location,
             "action": action,
@@ -190,8 +218,10 @@ class MemoryStore:
         verification_status: str = "strong_match",
         timestamp: Optional[str] = None,
         raw_description: str = "",
+        observed_at: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Convenience method to record a successful visual search match into observations."""
+        obs_time = observed_at or timestamp
         desc = (
             raw_description
             or f"Visual embedding match for '{object_name}' (similarity={similarity_score:.3f}) at {location}."
@@ -202,7 +232,8 @@ class MemoryStore:
             action="visually observed",
             event_type=EventType.OBJECT_OBSERVATION,
             raw_description=desc,
-            timestamp=timestamp,
+            timestamp=obs_time,
+            observed_at=obs_time,
             registered_object_id=registered_object_id,
             bounding_box=bounding_box,
             similarity_score=similarity_score,
@@ -254,6 +285,11 @@ class MemoryStore:
                 d["bounding_box"] = json.loads(d["bounding_box"])
             except Exception:
                 pass
+        obs_at = d.get("observed_at") or d.get("timestamp")
+        d["observed_at"] = obs_at
+        if not d.get("created_at"):
+            d["created_at"] = d.get("timestamp")
+        d["formatted_time"] = format_observation_timestamp(obs_at)
         return d
 
     def query_medication_events(

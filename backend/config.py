@@ -29,6 +29,9 @@ class Settings(BaseSettings):
     SESSION_TTL_MINUTES: int = 10
     DEFAULT_DEVICE_ID: str = "default_device"
 
+    # Timezone configuration
+    TIMEZONE: str = "Asia/Kolkata"
+
     # Speech configuration
     STT_MODEL_SIZE: str = "base"
     STT_DEVICE: str = "cpu"
